@@ -1,8 +1,49 @@
+import fs from "node:fs/promises"
+import path from "node:path"
+import type {
+  FsReadRestrictionConfig,
+  FsWriteRestrictionConfig,
+} from "@anthropic-ai/sandbox-runtime"
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime"
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadConfig, resolveConfig } from "./config"
+import { loadConfig, loadSrtSettings, resolveConfig } from "./config"
 
-export type { SandboxPluginConfig } from "./config"
+export type { SrtSettings } from "./config"
+
+/**
+ * These tools run in the host Node.js process and are not covered by the
+ * bash sandbox (bwrap/seatbelt), which only wraps child processes. We
+ * enforce the same denyRead / allowWrite rules from the sandbox config here
+ * explicitly so that file access policy applies uniformly across all tools.
+ */
+const READ_TOOLS = new Set(["read", "glob", "grep"])
+const WRITE_TOOLS = new Set(["write", "edit"])
+const FILE_TOOL_PATH_ARG: Record<string, string> = {
+  read: "filePath",
+  glob: "path",
+  grep: "path",
+  write: "filePath",
+  edit: "filePath",
+}
+
+function isUnder(filePath: string, dir: string): boolean {
+  const resolved = path.resolve(filePath)
+  const base = path.resolve(dir)
+  return resolved === base || resolved.startsWith(base + path.sep)
+}
+
+function isPathDeniedForRead(filePath: string, config: FsReadRestrictionConfig): boolean {
+  const denied = config.denyOnly.some((d) => isUnder(filePath, d))
+  if (!denied) return false
+  const allowedBack = config.allowWithinDeny?.some((a) => isUnder(filePath, a)) ?? false
+  return !allowedBack
+}
+
+function isPathDeniedForWrite(filePath: string, config: FsWriteRestrictionConfig): boolean {
+  const allowed = config.allowOnly.some((a) => isUnder(filePath, a))
+  if (!allowed) return true
+  return config.denyWithinAllow.some((d) => isUnder(filePath, d))
+}
 
 export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
   if (process.platform === "win32") {
@@ -20,7 +61,21 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
   const userConfig = await loadConfig(directory)
   if (userConfig.disabled) return {}
 
-  const runtimeConfig = resolveConfig(directory, worktree, userConfig)
+  const srtSettings = await loadSrtSettings()
+  if (srtSettings) {
+    console.log("[opencode-sandbox] Loaded settings from ~/.srt-settings.json")
+  }
+
+  const runtimeConfig = resolveConfig(directory, worktree, userConfig, srtSettings ?? undefined)
+
+  // bwrap requires that the parent directory of any --ro-bind target already
+  // exists on the host. For denyRead paths like ~/.aws/credentials where the
+  // parent directory (~/.aws) may not exist, we create it so bwrap can mount
+  // /dev/null over the path to block access.
+  const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []
+  await Promise.all(
+    denyReadPaths.map((p) => fs.mkdir(path.dirname(p), { recursive: true }).catch(() => {})),
+  )
 
   let sandboxReady = false
   try {
@@ -43,31 +98,54 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
 
   return {
     "tool.execute.before": async (input, output) => {
-      if (input.tool !== "bash") return
+      if (input.tool === "bash") {
+        const command = output.args?.command
+        if (typeof command !== "string" || !command) return
 
-      const command = output.args?.command
-      if (typeof command !== "string" || !command) return
+        originalCommands.set(input.callID, command)
 
-      originalCommands.set(input.callID, command)
+        try {
+          output.args.command = await SandboxManager.wrapWithSandbox(command)
+        } catch (err) {
+          console.warn(
+            "[opencode-sandbox] Failed to wrap command, running unsandboxed:",
+            err instanceof Error ? err.message : err,
+          )
+        }
+        return
+      }
 
-      try {
-        output.args.command = await SandboxManager.wrapWithSandbox(command)
-      } catch (err) {
-        console.warn(
-          "[opencode-sandbox] Failed to wrap command, running unsandboxed:",
-          err instanceof Error ? err.message : err,
-        )
+      // Enforce filesystem access policy for native file tools. These tools
+      // run in the host Node.js process and bypass the bash sandbox entirely,
+      // so we check paths here against the same config used by bwrap/seatbelt.
+      const pathKey = FILE_TOOL_PATH_ARG[input.tool]
+      if (pathKey && typeof output.args?.[pathKey] === "string") {
+        const filePath = output.args[pathKey]
+        if (READ_TOOLS.has(input.tool)) {
+          if (isPathDeniedForRead(filePath, SandboxManager.getFsReadConfig())) {
+            throw new Error(`[opencode-sandbox] Read denied by sandbox policy: ${filePath}`)
+          }
+        } else if (WRITE_TOOLS.has(input.tool)) {
+          if (isPathDeniedForWrite(filePath, SandboxManager.getFsWriteConfig())) {
+            throw new Error(`[opencode-sandbox] Write denied by sandbox policy: ${filePath}`)
+          }
+        }
       }
     },
 
-    "tool.execute.after": async (input, _output) => {
+    "tool.execute.after": async (input, output) => {
       if (input.tool !== "bash") return
 
       // Restore original command so the UI shows it instead of the bwrap wrapper
       const originalCommand = originalCommands.get(input.callID)
-      if (originalCommand && input.args && typeof input.args.command === "string") {
-        input.args.command = originalCommand
+      if (originalCommand) {
         originalCommands.delete(input.callID)
+        if (input.args && typeof input.args.command === "string") {
+          input.args.command = originalCommand
+        }
+        if (typeof output.title === "string") {
+          output.title = originalCommand
+        }
       }
     },
   }

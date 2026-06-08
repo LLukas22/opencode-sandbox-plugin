@@ -4,12 +4,22 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 const mockInitialize = mock(() => Promise.resolve())
 const mockWrapWithSandbox = mock((cmd: string) => Promise.resolve(`srt-wrapped: ${cmd}`))
 const mockReset = mock(() => Promise.resolve())
+const mockGetFsReadConfig = mock(() => ({
+  denyOnly: ["/home/user/.ssh", "/home/user/.aws"],
+  allowWithinDeny: [] as string[],
+}))
+const mockGetFsWriteConfig = mock(() => ({
+  allowOnly: ["/tmp/project"],
+  denyWithinAllow: [] as string[],
+}))
 
 mock.module("@anthropic-ai/sandbox-runtime", () => ({
   SandboxManager: {
     initialize: mockInitialize,
     wrapWithSandbox: mockWrapWithSandbox,
     reset: mockReset,
+    getFsReadConfig: mockGetFsReadConfig,
+    getFsWriteConfig: mockGetFsWriteConfig,
   },
 }))
 
@@ -28,6 +38,8 @@ describe("SandboxPlugin", () => {
   beforeEach(() => {
     mockInitialize.mockClear()
     mockWrapWithSandbox.mockClear()
+    mockGetFsReadConfig.mockClear()
+    mockGetFsWriteConfig.mockClear()
     delete process.env.OPENCODE_DISABLE_SANDBOX
     delete process.env.OPENCODE_SANDBOX_CONFIG
   })
@@ -139,6 +151,105 @@ describe("SandboxPlugin", () => {
     expect(output.args.command).toBe("echo hello")
   })
 
+  test("blocks read tool on denied path", async () => {
+    if (process.platform === "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "read", sessionID: "s1", callID: "c1" }
+    const output = { args: { filePath: "/home/user/.ssh/id_rsa" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
+      "[opencode-sandbox] Read denied by sandbox policy",
+    )
+  })
+
+  test("allows read tool on non-denied path", async () => {
+    if (process.platform === "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "read", sessionID: "s1", callID: "c1" }
+    const output = { args: { filePath: "/tmp/project/src/foo.ts" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).resolves.toBeUndefined()
+  })
+
+  test("allows read when path is re-allowed via allowWithinDeny", async () => {
+    if (process.platform === "win32") return
+
+    mockGetFsReadConfig.mockImplementationOnce(() => ({
+      denyOnly: ["/home/user/.ssh"],
+      allowWithinDeny: ["/home/user/.ssh/known_hosts"],
+    }))
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "read", sessionID: "s1", callID: "c1" }
+    const output = { args: { filePath: "/home/user/.ssh/known_hosts" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).resolves.toBeUndefined()
+  })
+
+  test("blocks write tool on non-allowed path", async () => {
+    if (process.platform === "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "write", sessionID: "s1", callID: "c1" }
+    const output = { args: { filePath: "/etc/passwd" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
+      "[opencode-sandbox] Write denied by sandbox policy",
+    )
+  })
+
+  test("allows write tool on allowed path", async () => {
+    if (process.platform === "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "write", sessionID: "s1", callID: "c1" }
+    const output = { args: { filePath: "/tmp/project/src/foo.ts" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).resolves.toBeUndefined()
+  })
+
+  test("blocks edit tool on path within denyWithinAllow", async () => {
+    if (process.platform === "win32") return
+
+    mockGetFsWriteConfig.mockImplementationOnce(() => ({
+      allowOnly: ["/tmp/project"],
+      denyWithinAllow: ["/tmp/project/secret"],
+    }))
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "edit", sessionID: "s1", callID: "c1" }
+    const output = { args: { filePath: "/tmp/project/secret/key.pem" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
+      "[opencode-sandbox] Write denied by sandbox policy",
+    )
+  })
+
+  test("blocks grep tool on denied path", async () => {
+    if (process.platform === "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "grep", sessionID: "s1", callID: "c1" }
+    const output = { args: { pattern: "SECRET", path: "/home/user/.aws" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
+      "[opencode-sandbox] Read denied by sandbox policy",
+    )
+  })
+
+  test("skips path check for glob with no path arg", async () => {
+    if (process.platform === "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "glob", sessionID: "s1", callID: "c1" }
+    const output = { args: { pattern: "**/*.ts" } }
+
+    await expect(hooks["tool.execute.before"]?.(input, output)).resolves.toBeUndefined()
+    expect(mockGetFsReadConfig).not.toHaveBeenCalled()
+  })
+
   test("restores correct command for concurrent bash calls", async () => {
     if (process.platform === "win32") return
 
@@ -168,10 +279,38 @@ describe("SandboxPlugin", () => {
       args: { command: output2.args.command },
     }
 
-    await hooks["tool.execute.after"]?.(afterInput1, {})
-    await hooks["tool.execute.after"]?.(afterInput2, {})
+    const afterOutput1 = { title: output1.args.command, output: "", metadata: {} }
+    const afterOutput2 = { title: output2.args.command, output: "", metadata: {} }
+
+    await hooks["tool.execute.after"]?.(afterInput1, afterOutput1)
+    await hooks["tool.execute.after"]?.(afterInput2, afterOutput2)
 
     expect(afterInput1.args.command).toBe("echo first")
     expect(afterInput2.args.command).toBe("echo second")
+    expect(afterOutput1.title).toBe("echo first")
+    expect(afterOutput2.title).toBe("echo second")
+  })
+
+  test("restores original command in output.title for UI display", async () => {
+    if (process.platform === "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const beforeInput = { tool: "bash", sessionID: "s1", callID: "c1" }
+    const beforeOutput = { args: { command: "ls -la" } }
+
+    await hooks["tool.execute.before"]?.(beforeInput, beforeOutput)
+
+    const afterInput = {
+      tool: "bash",
+      sessionID: "s1",
+      callID: "c1",
+      args: { command: beforeOutput.args.command },
+    }
+    const afterOutput = { title: beforeOutput.args.command, output: "file1\nfile2", metadata: {} }
+
+    await hooks["tool.execute.after"]?.(afterInput, afterOutput)
+
+    expect(afterInput.args.command).toBe("ls -la")
+    expect(afterOutput.title).toBe("ls -la")
   })
 })

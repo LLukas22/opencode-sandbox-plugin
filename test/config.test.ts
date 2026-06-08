@@ -1,8 +1,14 @@
-import { afterAll, beforeEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { getConfigDir, loadConfig, resolveConfig, type SandboxPluginConfig } from "../src/config"
+import {
+  getConfigDir,
+  loadConfig,
+  loadSrtSettings,
+  resolveConfig,
+  type SrtSettings,
+} from "../src/config"
 
 const PROJECT_DIR = `/tmp/test-project-sandbox-${process.pid}`
 const CONFIG_DIR = `/tmp/test-sandbox-config-${process.pid}`
@@ -39,7 +45,7 @@ describe("resolveConfig", () => {
   })
 
   test("user filesystem config overrides defaults", () => {
-    const user: SandboxPluginConfig = {
+    const user: SrtSettings = {
       filesystem: {
         denyRead: ["/custom/secret"],
         allowRead: ["/custom/secret.pub"],
@@ -56,7 +62,7 @@ describe("resolveConfig", () => {
   })
 
   test("user network config overrides defaults", () => {
-    const user: SandboxPluginConfig = {
+    const user: SrtSettings = {
       network: {
         allowedDomains: ["my-api.internal.com"],
         deniedDomains: ["evil.com"],
@@ -69,7 +75,7 @@ describe("resolveConfig", () => {
   })
 
   test("partial user config keeps other defaults", () => {
-    const user: SandboxPluginConfig = {
+    const user: SrtSettings = {
       filesystem: {
         denyRead: ["/only-this"],
         allowRead: ["/except-this"],
@@ -111,7 +117,7 @@ describe("resolveConfig", () => {
   })
 
   test("handles unix socket config", () => {
-    const user: SandboxPluginConfig = {
+    const user: SrtSettings = {
       network: {
         allowUnixSockets: ["/var/run/docker.sock"],
         allowAllUnixSockets: false,
@@ -222,5 +228,161 @@ describe("loadConfig", () => {
     await fs.writeFile(path.join(sandboxConfigDir, "config.json"), "broken{json")
     const config = await loadConfig(PROJECT_DIR)
     expect(config).toEqual({})
+  })
+})
+
+describe("loadSrtSettings", () => {
+  const srtPath = path.join(os.homedir(), ".srt-settings.json")
+  let originalExists = false
+
+  beforeEach(async () => {
+    try {
+      await fs.access(srtPath)
+      originalExists = true
+    } catch {
+      originalExists = false
+    }
+    if (originalExists) {
+      await fs.rename(srtPath, `${srtPath}.bak`)
+    }
+  })
+
+  afterEach(async () => {
+    try {
+      await fs.rm(srtPath, { force: true })
+    } catch {}
+    if (originalExists) {
+      await fs.rename(`${srtPath}.bak`, srtPath)
+    }
+  })
+
+  test("returns null when ~/.srt-settings.json does not exist", async () => {
+    const result = await loadSrtSettings()
+    expect(result).toBeNull()
+  })
+
+  test("loads network and filesystem settings", async () => {
+    const settings: SrtSettings = {
+      network: {
+        allowedDomains: ["example.com"],
+        deniedDomains: ["evil.com"],
+        allowUnixSockets: ["/var/run/docker.sock"],
+        allowLocalBinding: true,
+      },
+      filesystem: {
+        denyRead: ["~/.ssh", "/etc/passwd"],
+        allowWrite: ["/tmp/project"],
+        denyWrite: [".env"],
+      },
+    }
+    await fs.writeFile(srtPath, JSON.stringify(settings))
+
+    const result = await loadSrtSettings()
+    expect(result?.network?.allowedDomains).toEqual(["example.com"])
+    expect(result?.network?.deniedDomains).toEqual(["evil.com"])
+    expect(result?.network?.allowUnixSockets).toEqual(["/var/run/docker.sock"])
+    expect(result?.filesystem?.allowWrite).toEqual(["/tmp/project"])
+    expect(result?.filesystem?.denyWrite).toEqual([".env"])
+  })
+
+  test("expands ~ in filesystem paths", async () => {
+    await fs.writeFile(
+      srtPath,
+      JSON.stringify({
+        filesystem: {
+          denyRead: ["~/.ssh", "~/.aws/credentials"],
+          allowWrite: ["~/projects"],
+        },
+      }),
+    )
+
+    const result = await loadSrtSettings()
+    expect(result?.filesystem?.denyRead).toEqual([
+      path.join(os.homedir(), ".ssh"),
+      path.join(os.homedir(), ".aws/credentials"),
+    ])
+    expect(result?.filesystem?.allowWrite).toEqual([path.join(os.homedir(), "projects")])
+  })
+
+  test("loads ignoreViolations and extra flags", async () => {
+    await fs.writeFile(
+      srtPath,
+      JSON.stringify({
+        ignoreViolations: { "*": ["/usr/bin"], "git push": ["/usr/bin/nc"] },
+        enableWeakerNestedSandbox: true,
+        enableWeakerNetworkIsolation: false,
+      }),
+    )
+
+    const result = await loadSrtSettings()
+    expect(result?.ignoreViolations).toEqual({ "*": ["/usr/bin"], "git push": ["/usr/bin/nc"] })
+    expect(result?.enableWeakerNestedSandbox).toBe(true)
+    expect(result?.enableWeakerNetworkIsolation).toBe(false)
+  })
+
+  test("handles invalid JSON gracefully", async () => {
+    await fs.writeFile(srtPath, "not valid json{")
+    const result = await loadSrtSettings()
+    expect(result).toBeNull()
+  })
+})
+
+describe("resolveConfig with SRT settings", () => {
+  test("srt settings used when no user config", () => {
+    const srt: SrtSettings = {
+      filesystem: { denyRead: ["/srt/secret"], allowWrite: ["/srt/output"], denyWrite: [] },
+      network: { allowedDomains: ["srt-domain.com"], deniedDomains: [] },
+      ignoreViolations: { "*": ["/usr/bin"] },
+      enableWeakerNestedSandbox: true,
+    }
+    const config = resolveConfig(PROJECT_DIR, WORKTREE, undefined, srt)
+
+    expect(config.filesystem?.denyRead).toEqual(["/srt/secret"])
+    expect(config.filesystem?.allowWrite).toEqual(["/srt/output"])
+    expect(config.network?.allowedDomains).toEqual(["srt-domain.com"])
+    expect(config.ignoreViolations).toEqual({ "*": ["/usr/bin"] })
+    expect(config.enableWeakerNestedSandbox).toBe(true)
+  })
+
+  test("user config takes priority over srt settings", () => {
+    const user: SrtSettings = {
+      filesystem: { denyRead: ["/user/secret"] },
+      network: { allowedDomains: ["user-domain.com"] },
+    }
+    const srt: SrtSettings = {
+      filesystem: { denyRead: ["/srt/secret"] },
+      network: { allowedDomains: ["srt-domain.com"] },
+    }
+    const config = resolveConfig(PROJECT_DIR, WORKTREE, user, srt)
+
+    expect(config.filesystem?.denyRead).toEqual(["/user/secret"])
+    expect(config.network?.allowedDomains).toEqual(["user-domain.com"])
+  })
+
+  test("user ignoreViolations takes priority over srt, flags merge with user first", () => {
+    const user: SrtSettings = {
+      filesystem: { denyRead: ["/user/secret"] },
+      ignoreViolations: { npm: ["/user/tmp"] },
+      enableWeakerNetworkIsolation: false,
+    }
+    const srt: SrtSettings = {
+      ignoreViolations: { npm: ["/private/tmp"] },
+      enableWeakerNetworkIsolation: true,
+    }
+    const config = resolveConfig(PROJECT_DIR, WORKTREE, user, srt)
+
+    expect(config.ignoreViolations).toEqual({ npm: ["/user/tmp"] })
+    expect(config.enableWeakerNetworkIsolation).toBe(false)
+  })
+
+  test("srt ignoreViolations and flags used when no user config", () => {
+    const srt: SrtSettings = {
+      ignoreViolations: { npm: ["/private/tmp"] },
+      enableWeakerNetworkIsolation: true,
+    }
+    const config = resolveConfig(PROJECT_DIR, WORKTREE, undefined, srt)
+
+    expect(config.ignoreViolations).toEqual({ npm: ["/private/tmp"] })
+    expect(config.enableWeakerNetworkIsolation).toBe(true)
   })
 })
