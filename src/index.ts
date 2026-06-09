@@ -49,11 +49,6 @@ function isPathDeniedForWrite(filePath: string, config: FsWriteRestrictionConfig
 }
 
 export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
-  if (process.platform === "win32") {
-    console.warn(`${TAG} Not supported on Windows — sandbox disabled`)
-    return {}
-  }
-
   if (
     process.env.OPENCODE_DISABLE_SANDBOX === "1" ||
     process.env.OPENCODE_DISABLE_SANDBOX === "true"
@@ -71,14 +66,12 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
 
   const runtimeConfig = resolveConfig(directory, worktree, userConfig, srtSettings ?? undefined)
 
-  // bwrap requires that the parent directory of any --ro-bind target already
-  // exists on the host. For denyRead paths like ~/.aws/credentials where the
-  // parent directory (~/.aws) may not exist, we create it so bwrap can mount
-  // /dev/null over the path to block access.
-  const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []
-  await Promise.all(
-    denyReadPaths.map((p) => fs.mkdir(path.dirname(p), { recursive: true }).catch(() => {})),
-  )
+  if (process.platform === "linux") {
+    const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []
+    await Promise.all(
+      denyReadPaths.map((p) => fs.mkdir(path.dirname(p), { recursive: true }).catch(() => {})),
+    )
+  }
 
   let sandboxReady = false
   try {
@@ -87,6 +80,11 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
     console.log(
       `${TAG} Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
     )
+    if (process.platform === "win32") {
+      console.log(
+        `${TAG} Windows mode: network isolation active, filesystem restrictions apply to file tools only (not bash)`,
+      )
+    }
   } catch (err) {
     console.error(`${TAG} Failed to initialize:`, err instanceof Error ? err.message : err)
     console.warn(`${TAG} Commands will run without sandbox`)
@@ -108,7 +106,7 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
           output.args.command = await SandboxManager.wrapWithSandbox(command)
         } catch (err) {
           console.warn(
-            "[opencode-sandbox] Failed to wrap command, running unsandboxed:",
+            `${TAG} Failed to wrap command, running unsandboxed:`,
             err instanceof Error ? err.message : err,
           )
         }
@@ -123,11 +121,11 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
         const filePath = output.args[pathKey]
         if (READ_TOOLS.has(input.tool)) {
           if (isPathDeniedForRead(filePath, SandboxManager.getFsReadConfig())) {
-            throw new Error(`[opencode-sandbox] Read denied by sandbox policy: ${filePath}`)
+            throw new Error(`${TAG} Read denied by sandbox policy: ${filePath}`)
           }
         } else if (WRITE_TOOLS.has(input.tool)) {
           if (isPathDeniedForWrite(filePath, SandboxManager.getFsWriteConfig())) {
-            throw new Error(`[opencode-sandbox] Write denied by sandbox policy: ${filePath}`)
+            throw new Error(`${TAG} Write denied by sandbox policy: ${filePath}`)
           }
         }
       }

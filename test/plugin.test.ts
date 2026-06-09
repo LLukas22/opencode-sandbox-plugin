@@ -45,8 +45,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("initializes sandbox on plugin load", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     expect(mockInitialize).toHaveBeenCalledTimes(1)
     expect(hooks["tool.execute.before"]).toBeDefined()
@@ -61,8 +59,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("wraps bash commands via tool.execute.before", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "bash", sessionID: "s1", callID: "c1" }
     const output = { args: { command: "ls -la" } }
@@ -74,8 +70,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("does not wrap non-bash tools", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "read", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/etc/hosts" } }
@@ -87,8 +81,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("passes through blocked command output unchanged", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "bash", sessionID: "s1", callID: "c1", args: {} }
     const output = {
@@ -103,8 +95,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("passes through normal command output unchanged", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "bash", sessionID: "s1", callID: "c1", args: {} }
     const output = {
@@ -119,8 +109,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("uses config from OPENCODE_SANDBOX_CONFIG env var", async () => {
-    if (process.platform === "win32") return
-
     process.env.OPENCODE_SANDBOX_CONFIG = JSON.stringify({
       filesystem: {
         denyRead: ["/custom/secret"],
@@ -134,8 +122,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("fails open when wrapWithSandbox throws", async () => {
-    if (process.platform === "win32") return
-
     mockWrapWithSandbox.mockImplementationOnce(() => {
       throw new Error("bwrap not found")
     })
@@ -152,20 +138,16 @@ describe("SandboxPlugin", () => {
   })
 
   test("blocks read tool on denied path", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "read", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/home/user/.ssh/id_rsa" } }
 
     await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
-      "[opencode-sandbox] Read denied by sandbox policy",
+      "Read denied by sandbox policy",
     )
   })
 
   test("allows read tool on non-denied path", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "read", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/tmp/project/src/foo.ts" } }
@@ -174,8 +156,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("allows read when path is re-allowed via allowWithinDeny", async () => {
-    if (process.platform === "win32") return
-
     mockGetFsReadConfig.mockImplementationOnce(() => ({
       denyOnly: ["/home/user/.ssh"],
       allowWithinDeny: ["/home/user/.ssh/known_hosts"],
@@ -189,20 +169,16 @@ describe("SandboxPlugin", () => {
   })
 
   test("blocks write tool on non-allowed path", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "write", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/etc/passwd" } }
 
     await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
-      "[opencode-sandbox] Write denied by sandbox policy",
+      "Write denied by sandbox policy",
     )
   })
 
   test("allows write tool on allowed path", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "write", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/tmp/project/src/foo.ts" } }
@@ -211,8 +187,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("blocks edit tool on path within denyWithinAllow", async () => {
-    if (process.platform === "win32") return
-
     mockGetFsWriteConfig.mockImplementationOnce(() => ({
       allowOnly: ["/tmp/project"],
       denyWithinAllow: ["/tmp/project/secret"],
@@ -223,25 +197,21 @@ describe("SandboxPlugin", () => {
     const output = { args: { filePath: "/tmp/project/secret/key.pem" } }
 
     await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
-      "[opencode-sandbox] Write denied by sandbox policy",
+      "Write denied by sandbox policy",
     )
   })
 
   test("blocks grep tool on denied path", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "grep", sessionID: "s1", callID: "c1" }
     const output = { args: { pattern: "SECRET", path: "/home/user/.aws" } }
 
     await expect(hooks["tool.execute.before"]?.(input, output)).rejects.toThrow(
-      "[opencode-sandbox] Read denied by sandbox policy",
+      "Read denied by sandbox policy",
     )
   })
 
   test("skips path check for glob with no path arg", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "glob", sessionID: "s1", callID: "c1" }
     const output = { args: { pattern: "**/*.ts" } }
@@ -251,8 +221,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("restores correct command for concurrent bash calls", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
 
     // Simulate two concurrent bash commands with different callIDs
@@ -292,8 +260,6 @@ describe("SandboxPlugin", () => {
   })
 
   test("restores original command in output.title for UI display", async () => {
-    if (process.platform === "win32") return
-
     const hooks = await SandboxPlugin(makeCtx())
     const beforeInput = { tool: "bash", sessionID: "s1", callID: "c1" }
     const beforeOutput = { args: { command: "ls -la" } }

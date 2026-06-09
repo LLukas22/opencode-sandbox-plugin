@@ -23,6 +23,12 @@ export interface SrtSettings {
     allowWrite?: string[]
     denyWrite?: string[]
   }
+  windows?: {
+    groupName?: string
+    groupSid?: string
+    wfpSublayerGuid?: string
+    proxyPortRange?: [number, number]
+  }
   ignoreViolations?: Record<string, string[]>
   enableWeakerNestedSandbox?: boolean
   enableWeakerNetworkIsolation?: boolean
@@ -79,7 +85,9 @@ const UNSAFE_WRITE_PATHS = new Set([
 
 function isSafeWritePath(p: string): boolean {
   const normalized = path.resolve(p)
-  if (UNSAFE_WRITE_PATHS.has(normalized)) {
+  const isDriveRoot = /^[A-Za-z]:\\?$/.test(normalized)
+  const unixLike = normalized.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "")
+  if (UNSAFE_WRITE_PATHS.has(normalized) || UNSAFE_WRITE_PATHS.has(unixLike) || isDriveRoot) {
     console.warn(`[opencode-sandbox] Rejecting unsafe write path: ${normalized}`)
     return false
   }
@@ -127,6 +135,15 @@ export function resolveConfig(
       allowLocalBinding:
         user?.network?.allowLocalBinding ?? srt?.network?.allowLocalBinding ?? false,
     },
+    windows:
+      process.platform === "win32"
+        ? {
+            groupName: user?.windows?.groupName ?? srt?.windows?.groupName ?? "sandbox-runtime-net",
+            groupSid: user?.windows?.groupSid ?? srt?.windows?.groupSid,
+            wfpSublayerGuid: user?.windows?.wfpSublayerGuid ?? srt?.windows?.wfpSublayerGuid,
+            proxyPortRange: user?.windows?.proxyPortRange ?? srt?.windows?.proxyPortRange,
+          }
+        : undefined,
     ignoreViolations: user?.ignoreViolations ?? srt?.ignoreViolations,
     enableWeakerNestedSandbox: user?.enableWeakerNestedSandbox ?? srt?.enableWeakerNestedSandbox,
     enableWeakerNetworkIsolation:

@@ -133,7 +133,7 @@ describe("resolveConfig", () => {
 describe("getConfigDir", () => {
   test("uses XDG_CONFIG_HOME when set", () => {
     process.env.XDG_CONFIG_HOME = "/custom/config"
-    expect(getConfigDir()).toBe("/custom/config/opencode-sandbox")
+    expect(getConfigDir()).toBe(path.join("/custom/config", "opencode-sandbox"))
     delete process.env.XDG_CONFIG_HOME
   })
 
