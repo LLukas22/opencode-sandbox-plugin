@@ -70,7 +70,7 @@ Without this fix, bwrap will fail with `loopback: Failed RTM_NEWADDR: Operation 
 **1. Install srt-win:**
 
 ```bash
-cargo install --git https://github.com/anthropic-experimental/sandbox-runtime.git srt-win
+cargo install --git https://github.com/LLukas22/sandbox-runtime.git --branch elevation srt-win
 ```
 
 **2. Set `SRT_WIN_PATH`:**
@@ -84,6 +84,7 @@ $env:SRT_WIN_PATH = (Get-Command srt-win).Source; [System.Environment]::SetEnvir
 ```bash
 srt-win install --name sandbox-runtime-net
 ```
+After the network was created you need to relog.
 
 ## What it does
 
