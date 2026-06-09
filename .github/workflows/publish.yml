@@ -22,7 +22,7 @@ jobs:
           node-version: lts/*
           registry-url: https://registry.npmjs.org/
 
-      - run: bun install
+      - run: npm install
 
       - run: bun test
 
