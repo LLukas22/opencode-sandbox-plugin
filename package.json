@@ -1,5 +1,5 @@
 {
-  "name": "opencode-sandbox",
+  "name": "opencode-sandbox-win",
   "version": "0.4.0",
   "description": "OpenCode plugin that sandboxes agent commands using @anthropic-ai/sandbox-runtime (seatbelt on macOS, bubblewrap on Linux)",
   "type": "module",
@@ -41,13 +41,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/isanchez31/opencode-sandbox-plugin.git"
+    "url": "git+https://github.com/LLukas22/opencode-sandbox-plugin.git"
   },
-  "homepage": "https://github.com/isanchez31/opencode-sandbox-plugin#readme",
+  "homepage": "https://github.com/LLukas22/opencode-sandbox-plugin#readme",
   "bugs": {
-    "url": "https://github.com/isanchez31/opencode-sandbox-plugin/issues"
+    "url": "https://github.com/LLukas22/opencode-sandbox-plugin/issues"
   },
-  "author": "Ivan Sanchez <ivan31.sanchez@gmail.com>",
+  "author": "LLukas22",
   "license": "MIT",
   "publishConfig": {
     "access": "public",
