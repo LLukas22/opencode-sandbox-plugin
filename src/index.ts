@@ -6,8 +6,8 @@ import type {
 } from "@anthropic-ai/sandbox-runtime"
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime"
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadConfig, loadSrtSettings, resolveConfig } from "./config"
 import { version } from "../package.json"
+import { loadConfig, loadSrtSettings, resolveConfig } from "./config"
 
 const TAG = `[opencode-sandbox v${version}]`
 
@@ -88,10 +88,7 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
       `${TAG} Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
     )
   } catch (err) {
-    console.error(
-      `${TAG} Failed to initialize:`,
-      err instanceof Error ? err.message : err,
-    )
+    console.error(`${TAG} Failed to initialize:`, err instanceof Error ? err.message : err)
     console.warn(`${TAG} Commands will run without sandbox`)
   }
 
