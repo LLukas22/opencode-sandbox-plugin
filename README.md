@@ -65,6 +65,26 @@ bwrap --ro-bind / / --dev /dev --proc /proc -- echo "sandbox works"
 
 Without this fix, bwrap will fail with `loopback: Failed RTM_NEWADDR: Operation not permitted` or `setting up uid map: Permission denied`.
 
+### Windows prerequisites
+
+**1. Install srt-win:**
+
+```bash
+cargo install --git https://github.com/anthropic-experimental/sandbox-runtime.git srt-win
+```
+
+**2. Set `SRT_WIN_PATH`:**
+
+```powershell
+$env:SRT_WIN_PATH = (Get-Command srt-win).Source; [System.Environment]::SetEnvironmentVariable("SRT_WIN_PATH", $env:SRT_WIN_PATH, "User")
+```
+
+**3. Create Network:**
+
+```bash
+srt-win install --name sandbox-runtime-net
+```
+
 ## What it does
 
 When the agent runs a bash command, the sandbox enforces three layers of protection:
