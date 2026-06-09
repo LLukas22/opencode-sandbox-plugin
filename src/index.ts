@@ -7,6 +7,9 @@ import type {
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime"
 import type { Plugin } from "@opencode-ai/plugin"
 import { loadConfig, loadSrtSettings, resolveConfig } from "./config"
+import { version } from "../package.json"
+
+const TAG = `[opencode-sandbox v${version}]`
 
 export type { SrtSettings } from "./config"
 
@@ -47,7 +50,7 @@ function isPathDeniedForWrite(filePath: string, config: FsWriteRestrictionConfig
 
 export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
   if (process.platform === "win32") {
-    console.warn("[opencode-sandbox] Not supported on Windows — sandbox disabled")
+    console.warn(`${TAG} Not supported on Windows — sandbox disabled`)
     return {}
   }
 
@@ -63,7 +66,7 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
 
   const srtSettings = await loadSrtSettings()
   if (srtSettings) {
-    console.log("[opencode-sandbox] Loaded settings from ~/.srt-settings.json")
+    console.log(`${TAG} Loaded settings from ~/.srt-settings.json`)
   }
 
   const runtimeConfig = resolveConfig(directory, worktree, userConfig, srtSettings ?? undefined)
@@ -82,14 +85,14 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
     await SandboxManager.initialize(runtimeConfig)
     sandboxReady = true
     console.log(
-      `[opencode-sandbox] Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
+      `${TAG} Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
     )
   } catch (err) {
     console.error(
-      "[opencode-sandbox] Failed to initialize:",
+      `${TAG} Failed to initialize:`,
       err instanceof Error ? err.message : err,
     )
-    console.warn("[opencode-sandbox] Commands will run without sandbox")
+    console.warn(`${TAG} Commands will run without sandbox`)
   }
 
   if (!sandboxReady) return {}
