@@ -55,7 +55,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@anthropic-ai/sandbox-runtime": "^0.0.54"
+    "@anthropic-ai/sandbox-runtime": "github:LLukas22/sandbox-runtime#elevation"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"
