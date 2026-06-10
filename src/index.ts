@@ -7,7 +7,7 @@ import type {
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime"
 import type { Plugin } from "@opencode-ai/plugin"
 import { version } from "../package.json"
-import { loadConfig, loadSrtSettings, resolveConfig } from "./config"
+import { ensureDefaultConfig, loadConfig, resolveConfig } from "./config"
 
 const TAG = `[opencode-sandbox v${version}]`
 
@@ -29,10 +29,16 @@ const FILE_TOOL_PATH_ARG: Record<string, string> = {
   edit: "filePath",
 }
 
+function normalizePath(p: string): string {
+  const resolved = path.resolve(p)
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+}
+
 function isUnder(filePath: string, dir: string): boolean {
-  const resolved = path.resolve(filePath)
-  const base = path.resolve(dir)
-  return resolved === base || resolved.startsWith(base + path.sep)
+  const resolved = normalizePath(filePath)
+  const base = normalizePath(dir)
+  const sep = base.endsWith(path.sep) ? "" : path.sep
+  return resolved === base || resolved.startsWith(base + sep)
 }
 
 function isPathDeniedForRead(filePath: string, config: FsReadRestrictionConfig): boolean {
@@ -56,15 +62,15 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
     return {}
   }
 
-  const userConfig = await loadConfig(directory)
-  if (userConfig.disabled) return {}
-
-  const srtSettings = await loadSrtSettings()
-  if (srtSettings) {
-    console.log(`${TAG} Loaded settings from ~/.srt-settings.json`)
+  const createdConfig = await ensureDefaultConfig()
+  if (createdConfig) {
+    console.log(`${TAG} Created default config at: ${createdConfig}`)
   }
 
-  const runtimeConfig = resolveConfig(directory, worktree, userConfig, srtSettings ?? undefined)
+  const config = await loadConfig()
+  if (config.disabled) return {}
+
+  const runtimeConfig = resolveConfig(directory, worktree, config)
 
   if (process.platform === "linux") {
     const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []

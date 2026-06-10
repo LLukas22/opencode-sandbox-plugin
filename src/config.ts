@@ -3,11 +3,6 @@ import os from "node:os"
 import path from "node:path"
 import type { SandboxRuntimeConfig } from "@anthropic-ai/sandbox-runtime"
 
-/**
- * Configuration for the opencode sandbox plugin. Uses the same format as the
- * native SRT settings file (~/.srt-settings.json) with an additional `disabled`
- * flag. All opencode config files (project, global, env var) use this shape.
- */
 export interface SrtSettings {
   disabled?: boolean
   network?: {
@@ -35,19 +30,36 @@ export interface SrtSettings {
   allowAppleEvents?: boolean
 }
 
-const DEFAULT_DENY_READ_DIRS = [
-  ".ssh",
-  ".gnupg",
-  ".aws/credentials",
-  ".azure",
-  ".config/gcloud",
-  ".config/gh",
-  ".kube",
-  ".docker/config.json",
-  ".npmrc",
-  ".netrc",
-  ".env",
-]
+function getDefaultDenyReadPaths(homeDir: string): string[] {
+  const common = [
+    ".ssh",
+    ".aws/credentials",
+    ".azure",
+    ".kube",
+    ".docker/config.json",
+    ".npmrc",
+    ".netrc",
+    ".env",
+  ].map((p) => path.join(homeDir, p))
+
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA ?? path.join(homeDir, "AppData", "Roaming")
+    return [
+      ...common,
+      path.join(homeDir, ".gnupg"),
+      path.join(appData, "gnupg"),
+      path.join(appData, "gcloud"),
+      path.join(appData, "GitHub CLI"),
+    ]
+  }
+
+  return [
+    ...common,
+    path.join(homeDir, ".gnupg"),
+    path.join(homeDir, ".config", "gcloud"),
+    path.join(homeDir, ".config", "gh"),
+  ]
+}
 
 const DEFAULT_ALLOWED_DOMAINS = [
   "registry.npmjs.org",
@@ -76,84 +88,83 @@ const UNSAFE_WRITE_PATHS = new Set([
   "/etc",
   "/var",
   "/opt",
-  "/Library",
-  "/System",
+  "/library",
+  "/system",
   "/private",
-  "/Volumes",
-  "/Users",
+  "/volumes",
+  "/users",
+  "/windows",
+  "/program files",
+  "/program files (x86)",
+  "/programdata",
 ])
 
 function isSafeWritePath(p: string): boolean {
-  const normalized = path.resolve(p)
-  const isDriveRoot = /^[A-Za-z]:\\?$/.test(normalized)
-  const unixLike = normalized.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "")
-  if (UNSAFE_WRITE_PATHS.has(normalized) || UNSAFE_WRITE_PATHS.has(unixLike) || isDriveRoot) {
-    console.warn(`[opencode-sandbox] Rejecting unsafe write path: ${normalized}`)
+  const resolved = path.resolve(p)
+  const isDriveRoot = /^[A-Za-z]:\\?$/.test(resolved)
+  const unixLike = resolved
+    .replace(/\\/g, "/")
+    .replace(/^[A-Za-z]:/, "")
+    .toLowerCase()
+  if (UNSAFE_WRITE_PATHS.has(unixLike) || isDriveRoot) {
+    console.warn(`[opencode-sandbox] Rejecting unsafe write path: ${resolved}`)
     return false
   }
   return true
 }
 
+export function getConfigPath(): string {
+  return path.join(os.homedir(), ".srt-settings.json")
+}
+
 export function resolveConfig(
   projectDir: string,
   worktree: string,
-  user?: SrtSettings,
-  srt?: SrtSettings,
+  config?: SrtSettings,
 ): SandboxRuntimeConfig {
-  const homeDir = os.homedir()
-
   const candidatePaths = [projectDir, worktree, os.tmpdir()].filter(Boolean)
   const safePaths = candidatePaths.filter((p) => isSafeWritePath(p))
   const seen = new Set<string>()
   const defaultWritePaths = safePaths.filter((p) => {
-    const resolved = path.resolve(p)
-    if (seen.has(resolved)) return false
-    seen.add(resolved)
+    const key = path
+      .resolve(p)
+      .replace(/\\/g, "/")
+      .replace(/^[A-Za-z]:/, "")
+      .toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
 
-  // Priority: user (opencode config) > srt (~/.srt-settings.json) > defaults
-  const writePaths =
-    user?.filesystem?.allowWrite ?? srt?.filesystem?.allowWrite ?? defaultWritePaths
+  const writePaths = config?.filesystem?.allowWrite ?? defaultWritePaths
 
   return {
     filesystem: {
-      denyRead:
-        user?.filesystem?.denyRead ??
-        srt?.filesystem?.denyRead ??
-        DEFAULT_DENY_READ_DIRS.map((p) => path.join(homeDir, p)),
-      allowRead: user?.filesystem?.allowRead ?? srt?.filesystem?.allowRead ?? [],
+      denyRead: config?.filesystem?.denyRead ?? [],
+      allowRead: config?.filesystem?.allowRead ?? [],
       allowWrite: writePaths,
-      denyWrite: user?.filesystem?.denyWrite ?? srt?.filesystem?.denyWrite ?? [],
+      denyWrite: config?.filesystem?.denyWrite ?? [],
     },
     network: {
-      allowedDomains:
-        user?.network?.allowedDomains ?? srt?.network?.allowedDomains ?? DEFAULT_ALLOWED_DOMAINS,
-      deniedDomains: user?.network?.deniedDomains ?? srt?.network?.deniedDomains ?? [],
-      allowUnixSockets: user?.network?.allowUnixSockets ?? srt?.network?.allowUnixSockets,
-      allowAllUnixSockets: user?.network?.allowAllUnixSockets ?? srt?.network?.allowAllUnixSockets,
-      allowLocalBinding:
-        user?.network?.allowLocalBinding ?? srt?.network?.allowLocalBinding ?? false,
+      allowedDomains: config?.network?.allowedDomains ?? [],
+      deniedDomains: config?.network?.deniedDomains ?? [],
+      allowUnixSockets: config?.network?.allowUnixSockets,
+      allowAllUnixSockets: config?.network?.allowAllUnixSockets,
+      allowLocalBinding: config?.network?.allowLocalBinding ?? false,
     },
     windows:
       process.platform === "win32"
         ? {
-            groupName: user?.windows?.groupName ?? srt?.windows?.groupName ?? "sandbox-runtime-net",
-            groupSid: user?.windows?.groupSid ?? srt?.windows?.groupSid,
-            wfpSublayerGuid: user?.windows?.wfpSublayerGuid ?? srt?.windows?.wfpSublayerGuid,
-            proxyPortRange: user?.windows?.proxyPortRange ?? srt?.windows?.proxyPortRange,
+            groupName: config?.windows?.groupName ?? "sandbox-runtime-net",
+            groupSid: config?.windows?.groupSid,
+            wfpSublayerGuid: config?.windows?.wfpSublayerGuid,
+            proxyPortRange: config?.windows?.proxyPortRange,
           }
         : undefined,
-    ignoreViolations: user?.ignoreViolations ?? srt?.ignoreViolations,
-    enableWeakerNestedSandbox: user?.enableWeakerNestedSandbox ?? srt?.enableWeakerNestedSandbox,
-    enableWeakerNetworkIsolation:
-      user?.enableWeakerNetworkIsolation ?? srt?.enableWeakerNetworkIsolation,
+    ignoreViolations: config?.ignoreViolations,
+    enableWeakerNestedSandbox: config?.enableWeakerNestedSandbox,
+    enableWeakerNetworkIsolation: config?.enableWeakerNetworkIsolation,
   }
-}
-
-export function getConfigDir(): string {
-  const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config")
-  return path.join(xdgConfig, "opencode-sandbox")
 }
 
 function expandTilde(p: string): string {
@@ -165,15 +176,6 @@ function expandTilde(p: string): string {
 
 function expandTildePaths(paths: string[] | undefined): string[] | undefined {
   return paths?.map(expandTilde)
-}
-
-async function tryLoadJsonFile<T>(filePath: string): Promise<T | null> {
-  try {
-    const content = await fs.readFile(filePath, "utf-8")
-    return JSON.parse(content) as T
-  } catch {
-    return null
-  }
 }
 
 function expandSettings(raw: SrtSettings): SrtSettings {
@@ -191,14 +193,43 @@ function expandSettings(raw: SrtSettings): SrtSettings {
   }
 }
 
-export async function loadSrtSettings(): Promise<SrtSettings | null> {
-  const srtPath = path.join(os.homedir(), ".srt-settings.json")
-  const raw = await tryLoadJsonFile<SrtSettings>(srtPath)
-  if (!raw) return null
-  return expandSettings(raw)
+function toTildePath(filePath: string, homeDir: string): string {
+  if (filePath === homeDir) return "~"
+  if (filePath.startsWith(homeDir + path.sep)) {
+    return `~/${filePath.slice(homeDir.length + 1).replace(/\\/g, "/")}`
+  }
+  return filePath
 }
 
-export async function loadConfig(projectDir: string): Promise<SrtSettings> {
+export async function ensureDefaultConfig(): Promise<string | null> {
+  const configPath = getConfigPath()
+
+  try {
+    await fs.access(configPath)
+    return null
+  } catch {
+    // does not exist — create it
+  }
+
+  const homeDir = os.homedir()
+  const defaultConfig: SrtSettings = {
+    network: {
+      allowedDomains: DEFAULT_ALLOWED_DOMAINS,
+      deniedDomains: [],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      denyRead: getDefaultDenyReadPaths(homeDir).map((p) => toTildePath(p, homeDir)),
+      allowRead: [],
+      denyWrite: [],
+    },
+  }
+
+  await fs.writeFile(configPath, JSON.stringify(defaultConfig, null, 2), "utf-8")
+  return configPath
+}
+
+export async function loadConfig(): Promise<SrtSettings> {
   const envConfig = process.env.OPENCODE_SANDBOX_CONFIG
   if (envConfig) {
     try {
@@ -208,16 +239,11 @@ export async function loadConfig(projectDir: string): Promise<SrtSettings> {
     }
   }
 
-  const configDir = getConfigDir()
-
-  const projectName = path.basename(projectDir)
-  const projectConfig = await tryLoadJsonFile<SrtSettings>(
-    path.join(configDir, "projects", `${projectName}.json`),
-  )
-  if (projectConfig) return expandSettings(projectConfig)
-
-  const globalConfig = await tryLoadJsonFile<SrtSettings>(path.join(configDir, "config.json"))
-  if (globalConfig) return expandSettings(globalConfig)
-
-  return {}
+  const configPath = getConfigPath()
+  try {
+    const content = await fs.readFile(configPath, "utf-8")
+    return expandSettings(JSON.parse(content) as SrtSettings)
+  } catch {
+    return {}
+  }
 }
