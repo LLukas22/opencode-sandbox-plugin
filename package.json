@@ -17,7 +17,6 @@
     "LICENSE"
   ],
   "scripts": {
-    "postinstall": "node scripts/ensure-sandbox-types.cjs",
     "build": "bun build ./src/index.ts --outdir dist --target node --format esm --external @anthropic-ai/sandbox-runtime --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly --declaration --outDir dist",
     "dev": "bun run --watch src/index.ts",
     "test": "bun test",
