@@ -138,6 +138,9 @@ describe("SandboxPlugin", () => {
   })
 
   test("blocks read tool on denied path", async () => {
+    process.env.OPENCODE_SANDBOX_CONFIG = JSON.stringify({
+      filesystem: { denyRead: ["/home/user/.ssh", "/home/user/.aws"] },
+    })
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "read", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/home/user/.ssh/id_rsa" } }
@@ -156,11 +159,12 @@ describe("SandboxPlugin", () => {
   })
 
   test("allows read when path is re-allowed via allowWithinDeny", async () => {
-    mockGetFsReadConfig.mockImplementationOnce(() => ({
-      denyOnly: ["/home/user/.ssh"],
-      allowWithinDeny: ["/home/user/.ssh/known_hosts"],
-    }))
-
+    process.env.OPENCODE_SANDBOX_CONFIG = JSON.stringify({
+      filesystem: {
+        denyRead: ["/home/user/.ssh"],
+        allowRead: ["/home/user/.ssh/known_hosts"],
+      },
+    })
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "read", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/home/user/.ssh/known_hosts" } }
@@ -187,11 +191,12 @@ describe("SandboxPlugin", () => {
   })
 
   test("blocks edit tool on path within denyWithinAllow", async () => {
-    mockGetFsWriteConfig.mockImplementationOnce(() => ({
-      allowOnly: ["/tmp/project"],
-      denyWithinAllow: ["/tmp/project/secret"],
-    }))
-
+    process.env.OPENCODE_SANDBOX_CONFIG = JSON.stringify({
+      filesystem: {
+        allowWrite: ["/tmp/project"],
+        denyWrite: ["/tmp/project/secret"],
+      },
+    })
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "edit", sessionID: "s1", callID: "c1" }
     const output = { args: { filePath: "/tmp/project/secret/key.pem" } }
@@ -202,6 +207,9 @@ describe("SandboxPlugin", () => {
   })
 
   test("blocks grep tool on denied path", async () => {
+    process.env.OPENCODE_SANDBOX_CONFIG = JSON.stringify({
+      filesystem: { denyRead: ["/home/user/.ssh", "/home/user/.aws"] },
+    })
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "grep", sessionID: "s1", callID: "c1" }
     const output = { args: { pattern: "SECRET", path: "/home/user/.aws" } }
@@ -217,7 +225,6 @@ describe("SandboxPlugin", () => {
     const output = { args: { pattern: "**/*.ts" } }
 
     await expect(hooks["tool.execute.before"]?.(input, output)).resolves.toBeUndefined()
-    expect(mockGetFsReadConfig).not.toHaveBeenCalled()
   })
 
   test("restores correct command for concurrent bash calls", async () => {

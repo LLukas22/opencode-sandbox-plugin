@@ -126,11 +126,11 @@ export function resolveConfig(
   const safePaths = candidatePaths.filter((p) => isSafeWritePath(p))
   const seen = new Set<string>()
   const defaultWritePaths = safePaths.filter((p) => {
-    const key = path
-      .resolve(p)
-      .replace(/\\/g, "/")
-      .replace(/^[A-Za-z]:/, "")
-      .toLowerCase()
+    // Normalise to a canonical lowercase forward-slash key for deduplication.
+    // Do NOT strip the drive letter: paths on different Windows drives that
+    // share the same relative structure (e.g. C:\repos\proj vs E:\repos\proj)
+    // must be treated as distinct entries, not collapsed into one.
+    const key = path.resolve(p).replace(/\\/g, "/").toLowerCase()
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -164,12 +164,18 @@ export function resolveConfig(
     ignoreViolations: config?.ignoreViolations,
     enableWeakerNestedSandbox: config?.enableWeakerNestedSandbox,
     enableWeakerNetworkIsolation: config?.enableWeakerNetworkIsolation,
+    // macOS only — silently ignored on other platforms by the runtime.
+    allowAppleEvents: config?.allowAppleEvents,
   }
 }
 
 function expandTilde(p: string): string {
-  if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) {
-    return path.join(os.homedir(), p.slice(1))
+  if (p === "~") return os.homedir()
+  // Slice off "~/" or "~\" (2 chars) so path.join receives a plain relative
+  // segment instead of a leading separator, which could be mis-interpreted as
+  // a UNC prefix ("\\") or a drive-root ("/") on Windows.
+  if (p.startsWith("~/") || p.startsWith("~\\")) {
+    return path.join(os.homedir(), p.slice(2))
   }
   return p
 }

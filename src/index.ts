@@ -98,6 +98,21 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
 
   if (!sandboxReady) return {}
 
+  // Build file-tool restriction configs directly from runtimeConfig rather than
+  // delegating to SandboxManager.getFsReadConfig() / getFsWriteConfig(). The
+  // SandboxManager's internal state can diverge from what resolveConfig() computed
+  // (e.g. when two copies of sandbox-runtime end up in the module graph, or when
+  // the runtime augments the allowlist with its own defaults), which would cause
+  // project-directory writes to be incorrectly denied.
+  const fsReadConfig: FsReadRestrictionConfig = {
+    denyOnly: runtimeConfig.filesystem?.denyRead ?? [],
+    allowWithinDeny: runtimeConfig.filesystem?.allowRead ?? [],
+  }
+  const fsWriteConfig: FsWriteRestrictionConfig = {
+    allowOnly: runtimeConfig.filesystem?.allowWrite ?? [],
+    denyWithinAllow: runtimeConfig.filesystem?.denyWrite ?? [],
+  }
+
   const originalCommands = new Map<string, string>()
 
   return {
@@ -126,11 +141,11 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
       if (pathKey && typeof output.args?.[pathKey] === "string") {
         const filePath = output.args[pathKey]
         if (READ_TOOLS.has(input.tool)) {
-          if (isPathDeniedForRead(filePath, SandboxManager.getFsReadConfig())) {
+          if (isPathDeniedForRead(filePath, fsReadConfig)) {
             throw new Error(`${TAG} Read denied by sandbox policy: ${filePath}`)
           }
         } else if (WRITE_TOOLS.has(input.tool)) {
-          if (isPathDeniedForWrite(filePath, SandboxManager.getFsWriteConfig())) {
+          if (isPathDeniedForWrite(filePath, fsWriteConfig)) {
             throw new Error(`${TAG} Write denied by sandbox policy: ${filePath}`)
           }
         }
@@ -140,7 +155,15 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
     "tool.execute.after": async (input, output) => {
       if (input.tool !== "bash") return
 
-      // Restore original command so the UI shows it instead of the bwrap wrapper
+      // Restore the original command on all observable fields so the UI shows
+      // the user's command rather than the internal bwrap/seatbelt wrapper.
+      // The before hook writes the wrapped command into output.args.command
+      // (what actually gets executed). The after hook restores it on:
+      //   - input.args.command — the tool's recorded input args, used by
+      //                          OpenCode to label the call in session history
+      //   - output.title       — the result title OpenCode renders in the UI;
+      //                          automatically set to the executed command string
+      //                          so it would otherwise expose the full wrapper
       const originalCommand = originalCommands.get(input.callID)
       if (originalCommand) {
         originalCommands.delete(input.callID)
