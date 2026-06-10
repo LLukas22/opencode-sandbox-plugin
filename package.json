@@ -17,6 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "postinstall": "bun x tsc -p node_modules/@anthropic-ai/sandbox-runtime/tsconfig.json --skipLibCheck || true",
     "build": "bun build ./src/index.ts --outdir dist --target node --format esm --external @anthropic-ai/sandbox-runtime --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly --declaration --outDir dist",
     "dev": "bun run --watch src/index.ts",
     "test": "bun test",
