@@ -22,7 +22,10 @@ jobs:
           node-version: lts/*
           registry-url: https://registry.npmjs.org/
 
-      - run: npm install
+      - run: bun install
+
+      - name: Build sandbox-runtime types
+        run: bun run postinstall
 
       - run: bun test
 
