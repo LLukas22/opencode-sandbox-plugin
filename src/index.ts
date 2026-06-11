@@ -8,17 +8,12 @@ import { SandboxManager } from "@anthropic-ai/sandbox-runtime"
 import type { Plugin } from "@opencode-ai/plugin"
 import { version } from "../package.json"
 import { ensureDefaultConfig, loadConfig, resolveConfig } from "./config"
+import { logger } from "./logger"
 
 const TAG = `[opencode-sandbox v${version}]`
 
 export type { SrtSettings } from "./config"
 
-/**
- * These tools run in the host Node.js process and are not covered by the
- * bash sandbox (bwrap/seatbelt), which only wraps child processes. We
- * enforce the same denyRead / allowWrite rules from the sandbox config here
- * explicitly so that file access policy applies uniformly across all tools.
- */
 const READ_TOOLS = new Set(["read", "glob", "grep"])
 const WRITE_TOOLS = new Set(["write", "edit"])
 const FILE_TOOL_PATH_ARG: Record<string, string> = {
@@ -27,6 +22,10 @@ const FILE_TOOL_PATH_ARG: Record<string, string> = {
   grep: "path",
   write: "filePath",
   edit: "filePath",
+}
+
+function psQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
 }
 
 function normalizePath(p: string): string {
@@ -54,23 +53,40 @@ function isPathDeniedForWrite(filePath: string, config: FsWriteRestrictionConfig
   return config.denyWithinAllow.some((d) => isUnder(filePath, d))
 }
 
-export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
+const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
+  logger.init()
+  logger.info(
+    `Plugin starting v${version} | platform=${process.platform} | directory=${directory} | worktree=${worktree}`,
+  )
+
   if (
     process.env.OPENCODE_DISABLE_SANDBOX === "1" ||
     process.env.OPENCODE_DISABLE_SANDBOX === "true"
   ) {
+    logger.info("Plugin disabled via OPENCODE_DISABLE_SANDBOX env var")
     return {}
   }
 
   const createdConfig = await ensureDefaultConfig()
   if (createdConfig) {
+    logger.info(`Created default config at: ${createdConfig}`)
     console.log(`${TAG} Created default config at: ${createdConfig}`)
   }
 
   const config = await loadConfig()
-  if (config.disabled) return {}
+  if (config.disabled) {
+    logger.info("Plugin disabled via config.disabled=true")
+    return {}
+  }
 
   const runtimeConfig = resolveConfig(directory, worktree, config)
+  logger.info(`Resolved config: allowWrite=${JSON.stringify(runtimeConfig.filesystem?.allowWrite)}`)
+  logger.info(`Resolved config: denyRead=${JSON.stringify(runtimeConfig.filesystem?.denyRead)}`)
+  logger.info(`Resolved config: allowRead=${JSON.stringify(runtimeConfig.filesystem?.allowRead)}`)
+  logger.info(`Resolved config: denyWrite=${JSON.stringify(runtimeConfig.filesystem?.denyWrite)}`)
+  logger.info(
+    `Network config: allowedDomains=${JSON.stringify(runtimeConfig.network?.allowedDomains)}`,
+  )
 
   if (process.platform === "linux") {
     const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []
@@ -81,29 +97,35 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
 
   let sandboxReady = false
   try {
+    logger.info("Initializing SandboxManager...")
     await SandboxManager.initialize(runtimeConfig)
     sandboxReady = true
+    logger.info("SandboxManager initialized successfully")
     console.log(
       `${TAG} Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
     )
     if (process.platform === "win32") {
+      logger.info(
+        "Windows mode: network isolation active, filesystem restrictions apply to file tools only",
+      )
       console.log(
         `${TAG} Windows mode: network isolation active, filesystem restrictions apply to file tools only (not bash)`,
       )
     }
   } catch (err) {
-    console.error(`${TAG} Failed to initialize:`, err instanceof Error ? err.message : err)
+    const errMsg = err instanceof Error ? err.message : String(err)
+    const errStack = err instanceof Error ? err.stack : undefined
+    logger.error(`SandboxManager.initialize() failed: ${errMsg}`)
+    if (errStack) logger.error(`Stack: ${errStack}`)
+    console.error(`${TAG} Failed to initialize:`, errMsg)
     console.warn(`${TAG} Commands will run without sandbox`)
   }
 
-  if (!sandboxReady) return {}
+  if (!sandboxReady) {
+    logger.warn("Sandbox not ready — returning empty hooks (fail-open)")
+    return {}
+  }
 
-  // Build file-tool restriction configs directly from runtimeConfig rather than
-  // delegating to SandboxManager.getFsReadConfig() / getFsWriteConfig(). The
-  // SandboxManager's internal state can diverge from what resolveConfig() computed
-  // (e.g. when two copies of sandbox-runtime end up in the module graph, or when
-  // the runtime augments the allowlist with its own defaults), which would cause
-  // project-directory writes to be incorrectly denied.
   const fsReadConfig: FsReadRestrictionConfig = {
     denyOnly: runtimeConfig.filesystem?.denyRead ?? [],
     allowWithinDeny: runtimeConfig.filesystem?.allowRead ?? [],
@@ -113,7 +135,10 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
     denyWithinAllow: runtimeConfig.filesystem?.denyWrite ?? [],
   }
 
+  logger.info("Hooks registered — plugin active")
+
   const originalCommands = new Map<string, string>()
+  const sandboxEnvs = new Map<string, Record<string, string | undefined>>()
 
   return {
     "tool.execute.before": async (input, output) => {
@@ -122,48 +147,80 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
         if (typeof command !== "string" || !command) return
 
         originalCommands.set(input.callID, command)
+        logger.debug(`[bash] callID=${input.callID} command="${command.slice(0, 200)}"`)
 
         try {
-          output.args.command = await SandboxManager.wrapWithSandbox(command)
+          if (process.platform === "win32") {
+            const { argv, env } = await SandboxManager.wrapWithSandboxArgv(command, "powershell")
+            sandboxEnvs.set(input.callID, env)
+            output.args.command = `& ${argv.map(psQuote).join(" ")}`
+            logger.debug(
+              `[bash] callID=${input.callID} wrapped (Windows): ${output.args.command.slice(0, 300)}`,
+            )
+          } else {
+            output.args.command = await SandboxManager.wrapWithSandbox(command)
+            logger.debug(`[bash] callID=${input.callID} wrapped successfully`)
+          }
         } catch (err) {
-          console.warn(
-            `${TAG} Failed to wrap command, running unsandboxed:`,
-            err instanceof Error ? err.message : err,
-          )
+          const errMsg = err instanceof Error ? err.message : String(err)
+          logger.warn(`[bash] callID=${input.callID} wrap failed, running unsandboxed: ${errMsg}`)
+          console.warn(`${TAG} Failed to wrap command, running unsandboxed:`, errMsg)
         }
         return
       }
 
-      // Enforce filesystem access policy for native file tools. These tools
-      // run in the host Node.js process and bypass the bash sandbox entirely,
-      // so we check paths here against the same config used by bwrap/seatbelt.
       const pathKey = FILE_TOOL_PATH_ARG[input.tool]
       if (pathKey && typeof output.args?.[pathKey] === "string") {
         const filePath = output.args[pathKey]
+
         if (READ_TOOLS.has(input.tool)) {
-          if (isPathDeniedForRead(filePath, fsReadConfig)) {
+          const denied = isPathDeniedForRead(filePath, fsReadConfig)
+          if (denied) {
+            const matchedRule = fsReadConfig.denyOnly.find((d) => isUnder(filePath, d))
+            logger.warn(
+              `[${input.tool}] READ DENIED path="${filePath}" matchedDenyRule="${matchedRule}"`,
+            )
             throw new Error(`${TAG} Read denied by sandbox policy: ${filePath}`)
           }
+          logger.debug(`[${input.tool}] read allowed path="${filePath}"`)
         } else if (WRITE_TOOLS.has(input.tool)) {
-          if (isPathDeniedForWrite(filePath, fsWriteConfig)) {
+          const denied = isPathDeniedForWrite(filePath, fsWriteConfig)
+          if (denied) {
+            const inAllowList = fsWriteConfig.allowOnly.some((a) => isUnder(filePath, a))
+            if (!inAllowList) {
+              logger.warn(
+                `[${input.tool}] WRITE DENIED path="${filePath}" reason="not in allowOnly" allowOnly=${JSON.stringify(fsWriteConfig.allowOnly)}`,
+              )
+            } else {
+              const matchedDeny = fsWriteConfig.denyWithinAllow.find((d) => isUnder(filePath, d))
+              logger.warn(
+                `[${input.tool}] WRITE DENIED path="${filePath}" reason="matched denyWithinAllow" matchedRule="${matchedDeny}"`,
+              )
+            }
             throw new Error(`${TAG} Write denied by sandbox policy: ${filePath}`)
           }
+          const matchedAllow = fsWriteConfig.allowOnly.find((a) => isUnder(filePath, a))
+          logger.debug(
+            `[${input.tool}] write allowed path="${filePath}" matchedAllowRule="${matchedAllow}"`,
+          )
         }
+      }
+    },
+
+    "shell.env": async (input, output) => {
+      if (!input.callID || !sandboxEnvs.has(input.callID)) return
+      const env = sandboxEnvs.get(input.callID)
+      sandboxEnvs.delete(input.callID)
+      if (!env) return
+      for (const [k, v] of Object.entries(env)) {
+        if (v !== undefined) output.env[k] = v as string
       }
     },
 
     "tool.execute.after": async (input, output) => {
       if (input.tool !== "bash") return
 
-      // Restore the original command on all observable fields so the UI shows
-      // the user's command rather than the internal bwrap/seatbelt wrapper.
-      // The before hook writes the wrapped command into output.args.command
-      // (what actually gets executed). The after hook restores it on:
-      //   - input.args.command — the tool's recorded input args, used by
-      //                          OpenCode to label the call in session history
-      //   - output.title       — the result title OpenCode renders in the UI;
-      //                          automatically set to the executed command string
-      //                          so it would otherwise expose the full wrapper
+      sandboxEnvs.delete(input.callID)
       const originalCommand = originalCommands.get(input.callID)
       if (originalCommand) {
         originalCommands.delete(input.callID)
@@ -173,9 +230,11 @@ export const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
         if (typeof output.title === "string") {
           output.title = originalCommand
         }
+        logger.debug(`[bash] callID=${input.callID} restored original command in after-hook`)
       }
     },
   }
 }
 
+export { SandboxPlugin }
 export default SandboxPlugin

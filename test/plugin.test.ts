@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 // Mock the SandboxManager before importing the plugin
 const mockInitialize = mock(() => Promise.resolve())
 const mockWrapWithSandbox = mock((cmd: string) => Promise.resolve(`srt-wrapped: ${cmd}`))
+const mockWrapWithSandboxArgv = mock((cmd: string, _binShell?: string) =>
+  Promise.resolve({
+    argv: ["srt-win.exe", "exec", "--", "powershell.exe", "-NoProfile", "-Command", cmd],
+    env: { ...process.env, SRT_SANDBOX: "1", SRT_LOG: "/tmp/srt.log" },
+  }),
+)
 const mockReset = mock(() => Promise.resolve())
 const mockGetFsReadConfig = mock(() => ({
   denyOnly: ["/home/user/.ssh", "/home/user/.aws"],
@@ -17,13 +23,14 @@ mock.module("@anthropic-ai/sandbox-runtime", () => ({
   SandboxManager: {
     initialize: mockInitialize,
     wrapWithSandbox: mockWrapWithSandbox,
+    wrapWithSandboxArgv: mockWrapWithSandboxArgv,
     reset: mockReset,
     getFsReadConfig: mockGetFsReadConfig,
     getFsWriteConfig: mockGetFsWriteConfig,
   },
 }))
 
-import { SandboxPlugin } from "../src/index"
+import SandboxPlugin from "../src/index"
 
 const makeCtx = (dir = "/tmp/project", worktree = "/tmp/project") => ({
   client: {} as any,
@@ -38,6 +45,7 @@ describe("SandboxPlugin", () => {
   beforeEach(() => {
     mockInitialize.mockClear()
     mockWrapWithSandbox.mockClear()
+    mockWrapWithSandboxArgv.mockClear()
     mockGetFsReadConfig.mockClear()
     mockGetFsWriteConfig.mockClear()
     delete process.env.OPENCODE_DISABLE_SANDBOX
@@ -65,8 +73,42 @@ describe("SandboxPlugin", () => {
 
     await hooks["tool.execute.before"]?.(input, output)
 
-    expect(mockWrapWithSandbox).toHaveBeenCalledWith("ls -la")
-    expect(output.args.command).toBe("srt-wrapped: ls -la")
+    if (process.platform === "win32") {
+      expect(mockWrapWithSandboxArgv).toHaveBeenCalledWith("ls -la", "powershell")
+      expect(output.args.command).toContain("srt-win.exe")
+      expect(output.args.command).toContain("ls -la")
+    } else {
+      expect(mockWrapWithSandbox).toHaveBeenCalledWith("ls -la")
+      expect(output.args.command).toBe("srt-wrapped: ls -la")
+    }
+  })
+
+  test("shell.env hook applies sandbox env for Windows calls", async () => {
+    if (process.platform !== "win32") return
+
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "bash", sessionID: "s1", callID: "c1" }
+    const output = { args: { command: "ls -la" } }
+
+    await hooks["tool.execute.before"]?.(input, output)
+
+    const envOutput = { env: {} as Record<string, string> }
+    await hooks["shell.env"]?.({ cwd: "/tmp/project", sessionID: "s1", callID: "c1" }, envOutput)
+
+    expect(envOutput.env.SRT_SANDBOX).toBe("1")
+    expect(envOutput.env.SRT_LOG).toBe("/tmp/srt.log")
+  })
+
+  test("shell.env hook is no-op for unknown callID", async () => {
+    const hooks = await SandboxPlugin(makeCtx())
+    const envOutput = { env: {} as Record<string, string> }
+
+    await hooks["shell.env"]?.(
+      { cwd: "/tmp/project", sessionID: "s1", callID: "unknown" },
+      envOutput,
+    )
+
+    expect(envOutput.env).toEqual({})
   })
 
   test("does not wrap non-bash tools", async () => {
@@ -121,19 +163,23 @@ describe("SandboxPlugin", () => {
     expect(callArg.filesystem.denyRead).toEqual(["/custom/secret"])
   })
 
-  test("fails open when wrapWithSandbox throws", async () => {
-    mockWrapWithSandbox.mockImplementationOnce(() => {
-      throw new Error("bwrap not found")
-    })
+  test("fails open when wrap throws", async () => {
+    if (process.platform === "win32") {
+      mockWrapWithSandboxArgv.mockImplementationOnce(() => {
+        throw new Error("srt-win not found")
+      })
+    } else {
+      mockWrapWithSandbox.mockImplementationOnce(() => {
+        throw new Error("bwrap not found")
+      })
+    }
 
     const hooks = await SandboxPlugin(makeCtx())
     const input = { tool: "bash", sessionID: "s1", callID: "c1" }
     const output = { args: { command: "echo hello" } }
 
-    // Should not throw
     await hooks["tool.execute.before"]?.(input, output)
 
-    // Command should remain unchanged (fail open)
     expect(output.args.command).toBe("echo hello")
   })
 

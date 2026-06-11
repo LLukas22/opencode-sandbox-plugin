@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import type { SandboxRuntimeConfig } from "@anthropic-ai/sandbox-runtime"
+import { logger } from "./logger"
 
 export interface SrtSettings {
   disabled?: boolean
@@ -107,7 +108,7 @@ function isSafeWritePath(p: string): boolean {
     .replace(/^[A-Za-z]:/, "")
     .toLowerCase()
   if (UNSAFE_WRITE_PATHS.has(unixLike) || isDriveRoot) {
-    console.warn(`[opencode-sandbox] Rejecting unsafe write path: ${resolved}`)
+    logger.warn(`Rejecting unsafe write path: ${resolved}`)
     return false
   }
   return true
@@ -136,7 +137,9 @@ export function resolveConfig(
     return true
   })
 
-  const writePaths = config?.filesystem?.allowWrite ?? defaultWritePaths
+  const configuredWrite = config?.filesystem?.allowWrite
+  const writePaths =
+    configuredWrite && configuredWrite.length > 0 ? configuredWrite : defaultWritePaths
 
   return {
     filesystem: {
@@ -239,17 +242,26 @@ export async function loadConfig(): Promise<SrtSettings> {
   const envConfig = process.env.OPENCODE_SANDBOX_CONFIG
   if (envConfig) {
     try {
-      return expandSettings(JSON.parse(envConfig) as SrtSettings)
+      const parsed = expandSettings(JSON.parse(envConfig) as SrtSettings)
+      logger.info("Config loaded from OPENCODE_SANDBOX_CONFIG env var")
+      logger.debug(`Config contents: ${JSON.stringify(parsed)}`)
+      return parsed
     } catch {
-      console.warn("[opencode-sandbox] Invalid JSON in OPENCODE_SANDBOX_CONFIG, using defaults")
+      logger.warn("Invalid JSON in OPENCODE_SANDBOX_CONFIG env var, falling back to file")
     }
   }
 
   const configPath = getConfigPath()
+  logger.info(`Loading config from file: ${configPath}`)
   try {
     const content = await fs.readFile(configPath, "utf-8")
-    return expandSettings(JSON.parse(content) as SrtSettings)
-  } catch {
+    const parsed = expandSettings(JSON.parse(content) as SrtSettings)
+    logger.debug(`Config contents: ${JSON.stringify(parsed)}`)
+    return parsed
+  } catch (err) {
+    logger.warn(
+      `Failed to read config file ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+    )
     return {}
   }
 }
