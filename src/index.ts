@@ -1,11 +1,8 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import type {
-  FsReadRestrictionConfig,
-  FsWriteRestrictionConfig,
-} from "@anthropic-ai/sandbox-runtime"
+import type { FsReadRestrictionConfig } from "@anthropic-ai/sandbox-runtime"
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime"
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Hooks, Plugin } from "@opencode-ai/plugin"
 import { version } from "../package.json"
 import { ensureDefaultConfig, loadConfig, resolveConfig } from "./config"
 import { logger } from "./logger"
@@ -28,6 +25,33 @@ function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
+const SRT_SIGNATURES = ["srt-win", "srt-linux", "srt-mac", "bwrap", "sandbox-exec"]
+
+function isAlreadyWrapped(command: string): boolean {
+  const lower = command.toLowerCase()
+  return SRT_SIGNATURES.some((sig) => lower.includes(sig))
+}
+
+function cleanOutput(text: string, wrapped: string, original: string): string {
+  let result = text.replaceAll(wrapped, original)
+
+  for (const sig of SRT_SIGNATURES) {
+    if (!result.toLowerCase().includes(sig)) continue
+    result = result
+      .split("\n")
+      .map((line) => {
+        if (!line.toLowerCase().includes(sig)) return line
+        const cmdIdx = line.indexOf(original)
+        if (cmdIdx !== -1) return line.slice(cmdIdx)
+        return null
+      })
+      .filter((line): line is string => line !== null)
+      .join("\n")
+  }
+
+  return result
+}
+
 function normalizePath(p: string): string {
   const resolved = path.resolve(p)
   return process.platform === "win32" ? resolved.toLowerCase() : resolved
@@ -47,104 +71,164 @@ function isPathDeniedForRead(filePath: string, config: FsReadRestrictionConfig):
   return !allowedBack
 }
 
-function isPathDeniedForWrite(filePath: string, config: FsWriteRestrictionConfig): boolean {
-  const allowed = config.allowOnly.some((a) => isUnder(filePath, a))
+function isPathDeniedForWrite(
+  filePath: string,
+  allowOnly: string[],
+  denyWithinAllow: string[],
+): boolean {
+  const allowed = allowOnly.some((a) => isUnder(filePath, a))
   if (!allowed) return true
-  return config.denyWithinAllow.some((d) => isUnder(filePath, d))
+  return denyWithinAllow.some((d) => isUnder(filePath, d))
+}
+
+let disabled: boolean | null = null
+let sandboxReady = false
+const allowWritePaths: string[] = []
+const denyWritePaths: string[] = []
+const fsReadConfig: FsReadRestrictionConfig = { denyOnly: [], allowWithinDeny: [] }
+const originalCommands = new Map<string, string>()
+const wrappedCommands = new Map<string, string>()
+const sandboxEnvs = new Map<string, Record<string, string | undefined>>()
+const seenWritePaths = new Set<string>()
+const seenProjects = new Set<string>()
+let initLock: Promise<void> | null = null
+
+function addWritePaths(paths: string[]): void {
+  for (const p of paths) {
+    const key = normalizePath(p)
+    if (seenWritePaths.has(key)) continue
+    seenWritePaths.add(key)
+    allowWritePaths.push(p)
+    logger.info(`Added write path: ${p}`)
+  }
+}
+
+async function initForProject(directory: string, worktree: string): Promise<void> {
+  const projectKey = `${normalizePath(directory)}|${normalizePath(worktree)}`
+  if (seenProjects.has(projectKey)) return
+  seenProjects.add(projectKey)
+
+  logger.init()
+  logger.info(
+    `Plugin init for project | platform=${process.platform} | directory=${directory} | worktree=${worktree}`,
+  )
+
+  if (disabled === null) {
+    if (
+      process.env.OPENCODE_DISABLE_SANDBOX === "1" ||
+      process.env.OPENCODE_DISABLE_SANDBOX === "true"
+    ) {
+      logger.info("Plugin disabled via OPENCODE_DISABLE_SANDBOX env var")
+      disabled = true
+      return
+    }
+
+    const createdConfig = await ensureDefaultConfig()
+    if (createdConfig) {
+      logger.info(`Created default config at: ${createdConfig}`)
+      console.log(`${TAG} Created default config at: ${createdConfig}`)
+    }
+
+    const config = await loadConfig()
+    if (config.disabled) {
+      logger.info("Plugin disabled via config.disabled=true")
+      disabled = true
+      return
+    }
+    disabled = false
+
+    const runtimeConfig = resolveConfig(directory, worktree, config)
+    fsReadConfig.denyOnly = runtimeConfig.filesystem?.denyRead ?? []
+    fsReadConfig.allowWithinDeny = runtimeConfig.filesystem?.allowRead ?? []
+    denyWritePaths.push(...(runtimeConfig.filesystem?.denyWrite ?? []))
+    addWritePaths(runtimeConfig.filesystem?.allowWrite ?? [])
+
+    logger.info(
+      `Resolved config: allowWrite=${JSON.stringify(runtimeConfig.filesystem?.allowWrite)}`,
+    )
+    logger.info(`Resolved config: denyRead=${JSON.stringify(runtimeConfig.filesystem?.denyRead)}`)
+
+    if (process.platform === "linux") {
+      const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []
+      await Promise.all(
+        denyReadPaths.map((p) => fs.mkdir(path.dirname(p), { recursive: true }).catch(() => {})),
+      )
+    }
+
+    try {
+      logger.info("Initializing SandboxManager...")
+      await SandboxManager.initialize(runtimeConfig)
+      sandboxReady = true
+      logger.info("SandboxManager initialized successfully")
+      console.log(
+        `${TAG} Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
+      )
+      if (process.platform === "win32") {
+        console.log(
+          `${TAG} Windows mode: network isolation active, filesystem restrictions apply to file tools only (not bash)`,
+        )
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`SandboxManager.initialize() failed: ${errMsg}`)
+      console.error(`${TAG} Failed to initialize:`, errMsg)
+      console.warn(`${TAG} Commands will run without sandbox`)
+    }
+  } else {
+    addWritePaths([directory, worktree].filter(Boolean))
+
+    if (sandboxReady) {
+      const config = await loadConfig()
+      const runtimeConfig = resolveConfig(directory, worktree, config)
+      try {
+        await SandboxManager.initialize(runtimeConfig)
+        logger.info(`Re-initialized SandboxManager for project: ${directory}`)
+        console.log(
+          `${TAG} Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
+        )
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        logger.error(`SandboxManager re-initialize failed for ${directory}: ${errMsg}`)
+      }
+    }
+  }
 }
 
 const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
-  logger.init()
+  if (!initLock) {
+    initLock = initForProject(directory, worktree)
+  } else {
+    initLock = initLock.then(() => initForProject(directory, worktree))
+  }
+  await initLock
+
+  if (disabled) return {}
+  if (!sandboxReady) return {}
+
+  addWritePaths([directory, worktree].filter(Boolean))
   logger.info(
-    `Plugin starting v${version} | platform=${process.platform} | directory=${directory} | worktree=${worktree}`,
+    `Plugin call for directory=${directory} worktree=${worktree} — allowWrite now: ${JSON.stringify(allowWritePaths)}`,
   )
 
-  if (
-    process.env.OPENCODE_DISABLE_SANDBOX === "1" ||
-    process.env.OPENCODE_DISABLE_SANDBOX === "true"
-  ) {
-    logger.info("Plugin disabled via OPENCODE_DISABLE_SANDBOX env var")
-    return {}
-  }
-
-  const createdConfig = await ensureDefaultConfig()
-  if (createdConfig) {
-    logger.info(`Created default config at: ${createdConfig}`)
-    console.log(`${TAG} Created default config at: ${createdConfig}`)
-  }
-
-  const config = await loadConfig()
-  if (config.disabled) {
-    logger.info("Plugin disabled via config.disabled=true")
-    return {}
-  }
-
-  const runtimeConfig = resolveConfig(directory, worktree, config)
-  logger.info(`Resolved config: allowWrite=${JSON.stringify(runtimeConfig.filesystem?.allowWrite)}`)
-  logger.info(`Resolved config: denyRead=${JSON.stringify(runtimeConfig.filesystem?.denyRead)}`)
-  logger.info(`Resolved config: allowRead=${JSON.stringify(runtimeConfig.filesystem?.allowRead)}`)
-  logger.info(`Resolved config: denyWrite=${JSON.stringify(runtimeConfig.filesystem?.denyWrite)}`)
-  logger.info(
-    `Network config: allowedDomains=${JSON.stringify(runtimeConfig.network?.allowedDomains)}`,
-  )
-
-  if (process.platform === "linux") {
-    const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []
-    await Promise.all(
-      denyReadPaths.map((p) => fs.mkdir(path.dirname(p), { recursive: true }).catch(() => {})),
-    )
-  }
-
-  let sandboxReady = false
-  try {
-    logger.info("Initializing SandboxManager...")
-    await SandboxManager.initialize(runtimeConfig)
-    sandboxReady = true
-    logger.info("SandboxManager initialized successfully")
-    console.log(
-      `${TAG} Initialized — writes allowed in: ${runtimeConfig.filesystem?.allowWrite?.join(", ")}`,
-    )
-    if (process.platform === "win32") {
-      logger.info(
-        "Windows mode: network isolation active, filesystem restrictions apply to file tools only",
-      )
-      console.log(
-        `${TAG} Windows mode: network isolation active, filesystem restrictions apply to file tools only (not bash)`,
-      )
-    }
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err)
-    const errStack = err instanceof Error ? err.stack : undefined
-    logger.error(`SandboxManager.initialize() failed: ${errMsg}`)
-    if (errStack) logger.error(`Stack: ${errStack}`)
-    console.error(`${TAG} Failed to initialize:`, errMsg)
-    console.warn(`${TAG} Commands will run without sandbox`)
-  }
-
-  if (!sandboxReady) {
-    logger.warn("Sandbox not ready — returning empty hooks (fail-open)")
-    return {}
-  }
-
-  const fsReadConfig: FsReadRestrictionConfig = {
-    denyOnly: runtimeConfig.filesystem?.denyRead ?? [],
-    allowWithinDeny: runtimeConfig.filesystem?.allowRead ?? [],
-  }
-  const fsWriteConfig: FsWriteRestrictionConfig = {
-    allowOnly: runtimeConfig.filesystem?.allowWrite ?? [],
-    denyWithinAllow: runtimeConfig.filesystem?.denyWrite ?? [],
-  }
-
-  logger.info("Hooks registered — plugin active")
-
-  const originalCommands = new Map<string, string>()
-  const sandboxEnvs = new Map<string, Record<string, string | undefined>>()
-
-  return {
+  const hooks: Hooks = {
     "tool.execute.before": async (input, output) => {
       if (input.tool === "bash") {
         const command = output.args?.command
         if (typeof command !== "string" || !command) return
+
+        if (originalCommands.has(input.callID)) {
+          logger.warn(
+            `[bash] callID=${input.callID} already wrapped — skipping duplicate hook call`,
+          )
+          return
+        }
+
+        if (isAlreadyWrapped(command)) {
+          logger.warn(
+            `[bash] callID=${input.callID} command already contains sandbox wrapper — skipping`,
+          )
+          return
+        }
 
         originalCommands.set(input.callID, command)
         logger.debug(`[bash] callID=${input.callID} command="${command.slice(0, 200)}"`)
@@ -154,13 +238,16 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
             const { argv, env } = await SandboxManager.wrapWithSandboxArgv(command, "powershell")
             sandboxEnvs.set(input.callID, env)
             output.args.command = `& ${argv.map(psQuote).join(" ")}`
+            wrappedCommands.set(input.callID, output.args.command)
             logger.debug(
               `[bash] callID=${input.callID} wrapped (Windows): ${output.args.command.slice(0, 300)}`,
             )
           } else {
             output.args.command = await SandboxManager.wrapWithSandbox(command)
+            wrappedCommands.set(input.callID, output.args.command)
             logger.debug(`[bash] callID=${input.callID} wrapped successfully`)
           }
+          ;(output as any).title = command
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
           logger.warn(`[bash] callID=${input.callID} wrap failed, running unsandboxed: ${errMsg}`)
@@ -184,22 +271,22 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
           }
           logger.debug(`[${input.tool}] read allowed path="${filePath}"`)
         } else if (WRITE_TOOLS.has(input.tool)) {
-          const denied = isPathDeniedForWrite(filePath, fsWriteConfig)
+          const denied = isPathDeniedForWrite(filePath, allowWritePaths, denyWritePaths)
           if (denied) {
-            const inAllowList = fsWriteConfig.allowOnly.some((a) => isUnder(filePath, a))
+            const inAllowList = allowWritePaths.some((a) => isUnder(filePath, a))
             if (!inAllowList) {
               logger.warn(
-                `[${input.tool}] WRITE DENIED path="${filePath}" reason="not in allowOnly" allowOnly=${JSON.stringify(fsWriteConfig.allowOnly)}`,
+                `[${input.tool}] WRITE DENIED path="${filePath}" reason="not in allowOnly" allowOnly=${JSON.stringify(allowWritePaths)}`,
               )
             } else {
-              const matchedDeny = fsWriteConfig.denyWithinAllow.find((d) => isUnder(filePath, d))
+              const matchedDeny = denyWritePaths.find((d) => isUnder(filePath, d))
               logger.warn(
                 `[${input.tool}] WRITE DENIED path="${filePath}" reason="matched denyWithinAllow" matchedRule="${matchedDeny}"`,
               )
             }
             throw new Error(`${TAG} Write denied by sandbox policy: ${filePath}`)
           }
-          const matchedAllow = fsWriteConfig.allowOnly.find((a) => isUnder(filePath, a))
+          const matchedAllow = allowWritePaths.find((a) => isUnder(filePath, a))
           logger.debug(
             `[${input.tool}] write allowed path="${filePath}" matchedAllowRule="${matchedAllow}"`,
           )
@@ -223,18 +310,50 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
       sandboxEnvs.delete(input.callID)
       const originalCommand = originalCommands.get(input.callID)
       if (originalCommand) {
+        const wrapped = wrappedCommands.get(input.callID)
         originalCommands.delete(input.callID)
+        wrappedCommands.delete(input.callID)
         if (input.args && typeof input.args.command === "string") {
           input.args.command = originalCommand
         }
         if (typeof output.title === "string") {
           output.title = originalCommand
         }
+        if (typeof output.output === "string" && wrapped) {
+          output.output = cleanOutput(output.output, wrapped, originalCommand)
+        }
         logger.debug(`[bash] callID=${input.callID} restored original command in after-hook`)
+      } else {
+        if (typeof output.title === "string" && isAlreadyWrapped(output.title)) {
+          output.title = input.args?.command ?? output.title
+        }
+        if (typeof output.output === "string" && isAlreadyWrapped(output.output)) {
+          output.output = output.output
+            .split("\n")
+            .filter((line) => !SRT_SIGNATURES.some((sig) => line.toLowerCase().includes(sig)))
+            .join("\n")
+        }
       }
     },
   }
+
+  return hooks
 }
 
 export { SandboxPlugin }
 export default SandboxPlugin
+
+export function _resetPluginInstance(): void {
+  disabled = null
+  sandboxReady = false
+  initLock = null
+  allowWritePaths.length = 0
+  denyWritePaths.length = 0
+  fsReadConfig.denyOnly = []
+  fsReadConfig.allowWithinDeny = []
+  seenWritePaths.clear()
+  seenProjects.clear()
+  originalCommands.clear()
+  wrappedCommands.clear()
+  sandboxEnvs.clear()
+}

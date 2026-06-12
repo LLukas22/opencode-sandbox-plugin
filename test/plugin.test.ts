@@ -30,7 +30,7 @@ mock.module("@anthropic-ai/sandbox-runtime", () => ({
   },
 }))
 
-import SandboxPlugin from "../src/index"
+import SandboxPlugin, { _resetPluginInstance } from "../src/index"
 
 const makeCtx = (dir = "/tmp/project", worktree = "/tmp/project") => ({
   client: {} as any,
@@ -43,6 +43,7 @@ const makeCtx = (dir = "/tmp/project", worktree = "/tmp/project") => ({
 
 describe("SandboxPlugin", () => {
   beforeEach(() => {
+    _resetPluginInstance()
     mockInitialize.mockClear()
     mockWrapWithSandbox.mockClear()
     mockWrapWithSandboxArgv.mockClear()
@@ -57,6 +58,32 @@ describe("SandboxPlugin", () => {
     expect(mockInitialize).toHaveBeenCalledTimes(1)
     expect(hooks["tool.execute.before"]).toBeDefined()
     expect(hooks["tool.execute.after"]).toBeDefined()
+  })
+
+  test("initializes SandboxManager once per project", async () => {
+    await SandboxPlugin(makeCtx())
+    await SandboxPlugin(makeCtx("/other/project", "/other/project"))
+    expect(mockInitialize).toHaveBeenCalledTimes(2)
+    await SandboxPlugin(makeCtx("/other/project", "/other/project"))
+    expect(mockInitialize).toHaveBeenCalledTimes(2)
+  })
+
+  test("does not double-wrap bash command when hook called twice for same callID", async () => {
+    const hooks = await SandboxPlugin(makeCtx())
+    const input = { tool: "bash", sessionID: "s1", callID: "c1" }
+    const output = { args: { command: "ls -la" } }
+
+    await hooks["tool.execute.before"]?.(input, output)
+    const wrappedOnce = output.args.command
+
+    await hooks["tool.execute.before"]?.(input, output)
+
+    expect(output.args.command).toBe(wrappedOnce)
+    if (process.platform === "win32") {
+      expect(mockWrapWithSandboxArgv).toHaveBeenCalledTimes(1)
+    } else {
+      expect(mockWrapWithSandbox).toHaveBeenCalledTimes(1)
+    }
   })
 
   test("returns empty hooks when OPENCODE_DISABLE_SANDBOX=1", async () => {
@@ -331,5 +358,54 @@ describe("SandboxPlugin", () => {
 
     expect(afterInput.args.command).toBe("ls -la")
     expect(afterOutput.title).toBe("ls -la")
+  })
+
+  test("replaces wrapped command with original in output.output", async () => {
+    const hooks = await SandboxPlugin(makeCtx())
+    const beforeInput = { tool: "bash", sessionID: "s1", callID: "c1" }
+    const beforeOutput = { args: { command: "cat /etc/hosts" } }
+
+    await hooks["tool.execute.before"]?.(beforeInput, beforeOutput)
+    const wrappedCmd = beforeOutput.args.command
+
+    const afterInput = {
+      tool: "bash",
+      sessionID: "s1",
+      callID: "c1",
+      args: { command: wrappedCmd },
+    }
+    const afterOutput = {
+      title: wrappedCmd,
+      output: `$ ${wrappedCmd}\n127.0.0.1 localhost\n::1 localhost`,
+      metadata: {},
+    }
+
+    await hooks["tool.execute.after"]?.(afterInput, afterOutput)
+
+    expect(afterOutput.output).toBe("$ cat /etc/hosts\n127.0.0.1 localhost\n::1 localhost")
+  })
+
+  test("does not modify output when no wrapped command present", async () => {
+    const hooks = await SandboxPlugin(makeCtx())
+    const beforeInput = { tool: "bash", sessionID: "s1", callID: "c1" }
+    const beforeOutput = { args: { command: "echo hello" } }
+
+    await hooks["tool.execute.before"]?.(beforeInput, beforeOutput)
+
+    const afterInput = {
+      tool: "bash",
+      sessionID: "s1",
+      callID: "c1",
+      args: { command: beforeOutput.args.command },
+    }
+    const afterOutput = {
+      title: beforeOutput.args.command,
+      output: "hello\nworld",
+      metadata: {},
+    }
+
+    await hooks["tool.execute.after"]?.(afterInput, afterOutput)
+
+    expect(afterOutput.output).toBe("hello\nworld")
   })
 })

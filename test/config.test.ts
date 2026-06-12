@@ -41,7 +41,8 @@ describe("resolveConfig", () => {
 
     expect(config.filesystem?.denyRead).toEqual(["/custom/secret"])
     expect(config.filesystem?.allowRead).toEqual(["/custom/secret.pub"])
-    expect(config.filesystem?.allowWrite).toEqual(["/custom/output"])
+    expect(config.filesystem?.allowWrite).toContain("/custom/output")
+    expect(config.filesystem?.allowWrite).toContain(PROJECT_DIR)
     expect(config.filesystem?.denyWrite).toEqual(["/custom/no-write"])
   })
 
@@ -77,6 +78,19 @@ describe("resolveConfig", () => {
     const config = resolveConfig("/project", "/worktree")
     expect(config.filesystem?.allowWrite).toContain("/project")
     expect(config.filesystem?.allowWrite).toContain("/worktree")
+  })
+
+  test("project dirs are always writable even when config sets custom allowWrite", () => {
+    const cfg: SrtSettings = {
+      filesystem: {
+        allowWrite: ["/some/other/path"],
+      },
+    }
+    const config = resolveConfig("/my/project", "/my/worktree", cfg)
+    expect(config.filesystem?.allowWrite).toContain("/my/project")
+    expect(config.filesystem?.allowWrite).toContain("/my/worktree")
+    expect(config.filesystem?.allowWrite).toContain("/some/other/path")
+    expect(config.filesystem?.allowWrite).toContain(os.tmpdir())
   })
 
   test("rejects root path '/' as worktree to prevent sandbox bypass", () => {

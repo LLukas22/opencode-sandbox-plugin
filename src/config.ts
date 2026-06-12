@@ -123,23 +123,17 @@ export function resolveConfig(
   worktree: string,
   config?: SrtSettings,
 ): SandboxRuntimeConfig {
-  const candidatePaths = [projectDir, worktree, os.tmpdir()].filter(Boolean)
-  const safePaths = candidatePaths.filter((p) => isSafeWritePath(p))
+  const alwaysWritable = [projectDir, worktree, os.tmpdir()].filter(Boolean)
+  const configuredWrite = config?.filesystem?.allowWrite ?? []
+  const allPaths = [...alwaysWritable, ...configuredWrite]
   const seen = new Set<string>()
-  const defaultWritePaths = safePaths.filter((p) => {
-    // Normalise to a canonical lowercase forward-slash key for deduplication.
-    // Do NOT strip the drive letter: paths on different Windows drives that
-    // share the same relative structure (e.g. C:\repos\proj vs E:\repos\proj)
-    // must be treated as distinct entries, not collapsed into one.
+  const writePaths = allPaths.filter((p) => {
+    if (!isSafeWritePath(p)) return false
     const key = path.resolve(p).replace(/\\/g, "/").toLowerCase()
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
-
-  const configuredWrite = config?.filesystem?.allowWrite
-  const writePaths =
-    configuredWrite && configuredWrite.length > 0 ? configuredWrite : defaultWritePaths
 
   return {
     filesystem: {
