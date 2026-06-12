@@ -14,7 +14,7 @@ async function main() {
     process.exit(1)
   }
 
-  const createdConfig = await ensureDefaultConfig()
+  const _createdConfig = await ensureDefaultConfig()
   const config = await loadConfig()
   const runtimeConfig = resolveConfig(directory, worktree, config)
 

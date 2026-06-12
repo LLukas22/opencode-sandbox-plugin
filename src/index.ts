@@ -264,7 +264,7 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
             wrappedCommands.set(input.callID, output.args.command)
             logger.debug(`[bash] callID=${input.callID} wrapped successfully`)
           }
-          ;(output as any).title = command
+          ;(output as { args: Record<string, unknown>; title?: string }).title = command
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
           logger.warn(`[bash] callID=${input.callID} wrap failed, running unsandboxed: ${errMsg}`)
@@ -357,7 +357,7 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
   return hooks
 }
 
-export { SandboxPlugin, filterExistingPaths }
+export { filterExistingPaths, SandboxPlugin }
 export default SandboxPlugin
 
 export function _resetPluginInstance(): void {
