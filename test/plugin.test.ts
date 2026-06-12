@@ -178,16 +178,17 @@ describe("SandboxPlugin", () => {
   })
 
   test("uses config from OPENCODE_SANDBOX_CONFIG env var", async () => {
+    const denyPath = process.platform === "linux" ? "/tmp" : "/custom/secret"
     process.env.OPENCODE_SANDBOX_CONFIG = JSON.stringify({
       filesystem: {
-        denyRead: ["/custom/secret"],
+        denyRead: [denyPath],
       },
     })
 
     await SandboxPlugin(makeCtx())
 
     const callArg = mockInitialize.mock.calls[0]?.[0] as any
-    expect(callArg.filesystem.denyRead).toEqual(["/custom/secret"])
+    expect(callArg.filesystem.denyRead).toEqual([denyPath])
   })
 
   test("fails open when wrap throws", async () => {

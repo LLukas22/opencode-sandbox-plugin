@@ -251,11 +251,22 @@ describe("ensureDefaultConfig", () => {
     expect(content.network?.allowedDomains).toContain("github.com")
     expect(content.network?.deniedDomains).toEqual([])
     expect(content.network?.allowLocalBinding).toBe(false)
-    expect(content.filesystem?.denyRead).toContain("~/.ssh")
-    expect(content.filesystem?.denyRead).toContain("~/.npmrc")
     expect(content.filesystem?.allowRead).toEqual([])
     expect(content.filesystem?.denyWrite).toEqual([])
-    expect(content.filesystem?.allowWrite).toBeUndefined()
+    expect(content.filesystem?.allowWrite).toEqual([])
+
+    const denyRead = content.filesystem?.denyRead ?? []
+    for (const tildeEntry of denyRead) {
+      const expanded = tildeEntry.startsWith("~/")
+        ? path.join(os.homedir(), tildeEntry.slice(2))
+        : tildeEntry
+      let exists = false
+      try {
+        await fs.access(expanded)
+        exists = true
+      } catch {}
+      expect(exists).toBe(true)
+    }
   })
 
   test("returns null and does not overwrite when config already exists", async () => {
@@ -280,7 +291,16 @@ describe("ensureDefaultConfig", () => {
     const config = await loadConfig()
     const resolved = resolveConfig(PROJECT_DIR, WORKTREE, config)
 
-    expect(resolved.filesystem?.denyRead).toContain(path.join(os.homedir(), ".ssh"))
+    const sshPath = path.join(os.homedir(), ".ssh")
+    let sshExists = false
+    try {
+      await fs.access(sshPath)
+      sshExists = true
+    } catch {}
+    if (sshExists) {
+      expect(resolved.filesystem?.denyRead).toContain(sshPath)
+    }
+
     expect(resolved.network?.allowedDomains).toContain("registry.npmjs.org")
     expect(resolved.filesystem?.allowWrite).toContain(PROJECT_DIR)
   })

@@ -1,5 +1,5 @@
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime"
-import { loadConfig, resolveConfig } from "./config"
+import { ensureDefaultConfig, loadConfig, resolveConfig } from "./config"
 
 const directory = process.cwd()
 const worktree = directory
@@ -14,6 +14,7 @@ async function main() {
     process.exit(1)
   }
 
+  const createdConfig = await ensureDefaultConfig()
   const config = await loadConfig()
   const runtimeConfig = resolveConfig(directory, worktree, config)
 

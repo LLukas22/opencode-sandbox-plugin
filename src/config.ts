@@ -215,6 +215,17 @@ export async function ensureDefaultConfig(): Promise<string | null> {
   }
 
   const homeDir = os.homedir()
+  let denyReadPaths = getDefaultDenyReadPaths(homeDir)
+  const existing = await Promise.all(
+    denyReadPaths.map(async (p) => {
+      try {
+        return await fs.realpath(p)
+      } catch {
+        return null
+      }
+    }),
+  )
+  denyReadPaths = existing.filter((p): p is string => p !== null)
   const defaultConfig: SrtSettings = {
     network: {
       allowedDomains: DEFAULT_ALLOWED_DOMAINS,
@@ -222,8 +233,9 @@ export async function ensureDefaultConfig(): Promise<string | null> {
       allowLocalBinding: false,
     },
     filesystem: {
-      denyRead: getDefaultDenyReadPaths(homeDir).map((p) => toTildePath(p, homeDir)),
+      denyRead: denyReadPaths.map((p) => toTildePath(p, homeDir)),
       allowRead: [],
+      allowWrite: [],
       denyWrite: [],
     },
   }

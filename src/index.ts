@@ -32,6 +32,20 @@ function isAlreadyWrapped(command: string): boolean {
   return SRT_SIGNATURES.some((sig) => lower.includes(sig))
 }
 
+async function filterExistingPaths(paths: string[]): Promise<string[]> {
+  const results = await Promise.all(
+    paths.map(async (p) => {
+      try {
+        await fs.access(p)
+        return p
+      } catch {
+        return null
+      }
+    }),
+  )
+  return results.filter((p): p is string => p !== null)
+}
+
 function cleanOutput(text: string, wrapped: string, original: string): string {
   let result = text.replaceAll(wrapped, original)
 
@@ -85,7 +99,10 @@ let disabled: boolean | null = null
 let sandboxReady = false
 const allowWritePaths: string[] = []
 const denyWritePaths: string[] = []
-const fsReadConfig: FsReadRestrictionConfig = { denyOnly: [], allowWithinDeny: [] }
+const fsReadConfig: FsReadRestrictionConfig = {
+  denyOnly: [],
+  allowWithinDeny: [],
+}
 const originalCommands = new Map<string, string>()
 const wrappedCommands = new Map<string, string>()
 const sandboxEnvs = new Map<string, Record<string, string | undefined>>()
@@ -148,10 +165,9 @@ async function initForProject(directory: string, worktree: string): Promise<void
     )
     logger.info(`Resolved config: denyRead=${JSON.stringify(runtimeConfig.filesystem?.denyRead)}`)
 
-    if (process.platform === "linux") {
-      const denyReadPaths = runtimeConfig.filesystem?.denyRead ?? []
-      await Promise.all(
-        denyReadPaths.map((p) => fs.mkdir(path.dirname(p), { recursive: true }).catch(() => {})),
+    if (process.platform === "linux" && runtimeConfig.filesystem) {
+      runtimeConfig.filesystem.denyRead = await filterExistingPaths(
+        runtimeConfig.filesystem.denyRead ?? [],
       )
     }
 
@@ -225,7 +241,7 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
 
         if (isAlreadyWrapped(command)) {
           logger.warn(
-            `[bash] callID=${input.callID} command already contains sandbox wrapper — skipping`,
+            `[bash] callID=${input.callID} already wrapped — skipping duplicate hook call`,
           )
           return
         }
@@ -243,7 +259,8 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
               `[bash] callID=${input.callID} wrapped (Windows): ${output.args.command.slice(0, 300)}`,
             )
           } else {
-            output.args.command = await SandboxManager.wrapWithSandbox(command)
+            const wrapped = await SandboxManager.wrapWithSandbox(command)
+            output.args.command = wrapped
             wrappedCommands.set(input.callID, output.args.command)
             logger.debug(`[bash] callID=${input.callID} wrapped successfully`)
           }
@@ -340,7 +357,7 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
   return hooks
 }
 
-export { SandboxPlugin }
+export { SandboxPlugin, filterExistingPaths }
 export default SandboxPlugin
 
 export function _resetPluginInstance(): void {
