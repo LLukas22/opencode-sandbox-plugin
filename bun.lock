@@ -5,40 +5,36 @@
     "": {
       "name": "opencode-sandbox-win",
       "dependencies": {
-        "@anthropic-ai/sandbox-runtime": "github:LLukas22/sandbox-runtime#elevation",
+        "@anthropic-ai/sandbox-runtime": "github:LLukas22/sandbox-runtime#9257fb3801a8dd3318fe1af6b020425b0f24e6ca",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.0.0",
         "@opencode-ai/plugin": "^1.2.1",
-        "@opencode-ai/sdk": "^1.2.1",
         "@types/bun": "^1.3.9",
         "typescript": "^6.0.2",
-      },
-      "peerDependencies": {
-        "@opencode-ai/plugin": ">=1.0.0",
       },
     },
   },
   "packages": {
     "@anthropic-ai/sandbox-runtime": ["@anthropic-ai/sandbox-runtime@github:LLukas22/sandbox-runtime#9257fb3", { "dependencies": { "@pondwader/socks5-server": "^1.0.10", "commander": "^12.1.0", "node-forge": "^1.4.0", "shell-quote": "^1.8.4", "zod": "^3.24.1" }, "bin": { "srt": "dist/cli.js" } }, "LLukas22-sandbox-runtime-9257fb3", "sha512-H0NeKUl8Fkg2dyUXQmSViFCtVrVX64L1i0fGQsXPwWZybOC9hYYMgXYb3VlUT5y+4NRfKBXNyZUnhGbD3LHNSg=="],
 
-    "@biomejs/biome": ["@biomejs/biome@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/biome/-/biome-2.4.16.tgz", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.4.16", "@biomejs/cli-darwin-x64": "2.4.16", "@biomejs/cli-linux-arm64": "2.4.16", "@biomejs/cli-linux-arm64-musl": "2.4.16", "@biomejs/cli-linux-x64": "2.4.16", "@biomejs/cli-linux-x64-musl": "2.4.16", "@biomejs/cli-win32-arm64": "2.4.16", "@biomejs/cli-win32-x64": "2.4.16" }, "bin": { "biome": "bin/biome" } }, "sha512-x9ajFh1zChVybCiM3TN6OD4phAqLgtPZjFrZF+aTMYCPjwBO+k529TX7PPsAqtGNLeV4UgzwQnowEgS7bGmzcA=="],
+    "@biomejs/biome": ["@biomejs/biome@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/biome/-/biome-2.5.0.tgz", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.5.0", "@biomejs/cli-darwin-x64": "2.5.0", "@biomejs/cli-linux-arm64": "2.5.0", "@biomejs/cli-linux-arm64-musl": "2.5.0", "@biomejs/cli-linux-x64": "2.5.0", "@biomejs/cli-linux-x64-musl": "2.5.0", "@biomejs/cli-win32-arm64": "2.5.0", "@biomejs/cli-win32-x64": "2.5.0" }, "bin": { "biome": "bin/biome" } }, "sha512-4kURkd9hAPrdDM3C9n82ycYgx8hvQcW6MjKTEejruj8rK0N8P3OPpdy8BvI8kt3KWY4ycF5XtDOrktetEfhfuw=="],
 
-    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-darwin-arm64/-/cli-darwin-arm64-2.4.16.tgz", { "os": "darwin", "cpu": "arm64" }, "sha512-wxPvu4XOA85YJk9ixSWUmq/QBHbid85BISbOAqqBM/5xQpPk9ayjk5375tOlSC0BeCwNSbPFafQBm+vBumXq0A=="],
+    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-darwin-arm64/-/cli-darwin-arm64-2.5.0.tgz", { "os": "darwin", "cpu": "arm64" }, "sha512-Mn3Fwi3SA5fgmfCPqmzpWF2DLZnms3BVAhM088nTnGrTZmHS3wwIjcoZPqpXeNgd3DrrLH6xp8vTLIBuJoZiXw=="],
 
-    "@biomejs/cli-darwin-x64": ["@biomejs/cli-darwin-x64@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-darwin-x64/-/cli-darwin-x64-2.4.16.tgz", { "os": "darwin", "cpu": "x64" }, "sha512-xFCqGPwYusQJp4N4NJLi1XJiZqjwFdjhT+KqtNy+Ug3qgfczqnTa6MSDvxJF6TkuDLoYJItMapz6tAf7kCekFw=="],
+    "@biomejs/cli-darwin-x64": ["@biomejs/cli-darwin-x64@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-darwin-x64/-/cli-darwin-x64-2.5.0.tgz", { "os": "darwin", "cpu": "x64" }, "sha512-rg3VPL5P8mYro6pqlXYXuJWph21slVp3SZtAqWSrkZs40d2gTzYmHF8E/X1iTID25btmNKltNDJ926sqVBp7DQ=="],
 
-    "@biomejs/cli-linux-arm64": ["@biomejs/cli-linux-arm64@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-arm64/-/cli-linux-arm64-2.4.16.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-2kFb4//jxfZaP6D+Rj5VkHkxgyD9EoRAVBEQb8PKRv+s4NO2zYNJKXFaJmK1CmhufJOWEfpHKaRbOja7qjmdhQ=="],
+    "@biomejs/cli-linux-arm64": ["@biomejs/cli-linux-arm64@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-arm64/-/cli-linux-arm64-2.5.0.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-tl+LW8fdD96/xdeWtWwc82LIOc5CoY7N2AsogLTp5R4ECErYt+8Jl/N68ezN9vzSiqPTxw6vjcihoLPYKZHrlw=="],
 
-    "@biomejs/cli-linux-arm64-musl": ["@biomejs/cli-linux-arm64-musl@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.4.16.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-oYxnW0ARfJkr72ezzF2OR8N/rtkgLUQeYtF8cFhVswbknHxtTcmzSsanVJP8yQKnGpGpc2ck6c5zLvHahL6Cbg=="],
+    "@biomejs/cli-linux-arm64-musl": ["@biomejs/cli-linux-arm64-musl@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.5.0.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-vQdM4oSGaf7ZNeGO9w5+Y8SBtyser9M6znxYbm7Ec8wInxJu1WiKxFYZW5Auj2d80bcVvefuGGRxoFOE0eee8g=="],
 
-    "@biomejs/cli-linux-x64": ["@biomejs/cli-linux-x64@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-x64/-/cli-linux-x64-2.4.16.tgz", { "os": "linux", "cpu": "x64" }, "sha512-NbcBbi/nJqn5baae6wqRXdS7Gadf2uRpehSh6vMSYpG8OhkXl/Xg8aorWrJ+9VWqAT5ml90alLvorkpMW0nBwQ=="],
+    "@biomejs/cli-linux-x64": ["@biomejs/cli-linux-x64@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-x64/-/cli-linux-x64-2.5.0.tgz", { "os": "linux", "cpu": "x64" }, "sha512-zpEGf4RQbFEh8Vt7OmavLyyOzRbtcE9osCqrS1kfvt8jDvxwhKXLSf7n0ebr/ov0RJ9ssP+lhs6C8a9WwFvrQA=="],
 
-    "@biomejs/cli-linux-x64-musl": ["@biomejs/cli-linux-x64-musl@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-x64-musl/-/cli-linux-x64-musl-2.4.16.tgz", { "os": "linux", "cpu": "x64" }, "sha512-iHDS+MCM65DPqWGu+ECC3uoALyj2H7F4nVUPxIPjz/PIl94EUu+EDfGZDzFP+NY1EOPVt9NQvwFqq7HdMmowdg=="],
+    "@biomejs/cli-linux-x64-musl": ["@biomejs/cli-linux-x64-musl@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-linux-x64-musl/-/cli-linux-x64-musl-2.5.0.tgz", { "os": "linux", "cpu": "x64" }, "sha512-+9hIcMngJ+yGUahXqZuZ8CoWKJE9SAZsFsM3QDvXpNsLbXZ9lqVzgBhOk/jTSYkOA0GLP9eu3teukqpLUojHMg=="],
 
-    "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-win32-arm64/-/cli-win32-arm64-2.4.16.tgz", { "os": "win32", "cpu": "arm64" }, "sha512-0rgImMsNb5v/chhkIFe3wu7PEFClS6RBAYUijGL9UsYN3PanSaoK24HSSuSJb1pYbYYVjzAyZTl3gtjJ84BM8A=="],
+    "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-win32-arm64/-/cli-win32-arm64-2.5.0.tgz", { "os": "win32", "cpu": "arm64" }, "sha512-jB0wAvTLI4itx5VidqVUejPQFhRUxiZ9l9FvZ26D5fl6t3qme+ZB4PD3bTSeL1vZ8NI2Rx/zj6H9zcESuGHKGw=="],
 
-    "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.16", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-win32-x64/-/cli-win32-x64-2.4.16.tgz", { "os": "win32", "cpu": "x64" }, "sha512-Kp85jgoBHa05gix6UIRjfCDiUV3w/8VIdZ247VyyO2gEjaw12WEVhdIjlxp/AMzXxqxQwbxNTDVZ3Mwd2RG5rw=="],
+    "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@biomejs/cli-win32-x64/-/cli-win32-x64-2.5.0.tgz", { "os": "win32", "cpu": "x64" }, "sha512-VT/lF+GId+67j8aDfLkxdxNoVApsPSTbyAtB3jJq0IWTrY77WXfbPfpngxq0bA6JCEv/7k8C9qWjDRKRznDlyw=="],
 
     "@msgpackr-extract/msgpackr-extract-darwin-arm64": ["@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@msgpackr-extract/msgpackr-extract-darwin-arm64/-/msgpackr-extract-darwin-arm64-3.0.4.tgz", { "os": "darwin", "cpu": "arm64" }, "sha512-LCkGo6JDfaBhgST7UpPWgNgLINpcpabaHfyz5OBx75nUYxBsaEPxjnyNjWpeb/xBup/682QnBfRBy2/LvPutZQ=="],
 
@@ -52,9 +48,9 @@
 
     "@msgpackr-extract/msgpackr-extract-win32-x64": ["@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@msgpackr-extract/msgpackr-extract-win32-x64/-/msgpackr-extract-win32-x64-3.0.4.tgz", { "os": "win32", "cpu": "x64" }, "sha512-CmCXPQrkbwExx3j946/PtHWHbYJiCRBRDl4BlkRQcJB/YOwQxJRTpoo7aTsortjgoJ1x7opzTSxn7C+ASSLVjQ=="],
 
-    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.17.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@opencode-ai/plugin/-/plugin-1.17.0.tgz", { "dependencies": { "@opencode-ai/sdk": "1.17.0", "effect": "4.0.0-beta.74", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.3.4", "@opentui/keymap": ">=0.3.4", "@opentui/solid": ">=0.3.4" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-YiS6lTCMJ00CiJ9x31RnntkEPYgkDU+uL5bGkUgsJoUGUrxrwYNLvEKl5/UaslWuMP/nlRSZyV/6ZR+G71LCjA=="],
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.17.4", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@opencode-ai/plugin/-/plugin-1.17.4.tgz", { "dependencies": { "@opencode-ai/sdk": "1.17.4", "effect": "4.0.0-beta.74", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.3.4", "@opentui/keymap": ">=0.3.4", "@opentui/solid": ">=0.3.4" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-jqXxfYnunCwyiEEsdVNDsKUhKznXytAntwzeW3uLd2zbIYsbVCiq5nG5ZSlo4mz1IXgRLWzXDYk1OnmfG15V2A=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.17.0", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@opencode-ai/sdk/-/sdk-1.17.0.tgz", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-a4Fw6lEZqXhjkyTH0LNInntrdLaWcz9M1+eqQgSVqI6PAlcqC/Jo069k8VdGcU3u4qbETqmURec8+VfhS06Sqg=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.17.4", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@opencode-ai/sdk/-/sdk-1.17.4.tgz", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-OdHkBoNIQOjQsPnFtkcxAp9HsLAKn/MQiq7wIQURkRARmw8yhFqGiMPYbNm+UfLn6bMkx97rdPkWQARejMyiXQ=="],
 
     "@pondwader/socks5-server": ["@pondwader/socks5-server@1.0.10", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@pondwader/socks5-server/-/socks5-server-1.0.10.tgz", {}, "sha512-bQY06wzzR8D2+vVCUoBsr5QS2U6UgPUQRmErNwtsuI6vLcyRKkafjkr3KxbtGFf9aBBIV2mcvlsKD1UYaIV+sg=="],
 
@@ -62,7 +58,7 @@
 
     "@types/bun": ["@types/bun@1.3.14", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@types/bun/-/bun-1.3.14.tgz", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
-    "@types/node": ["@types/node@25.9.2", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@types/node/-/node-25.9.2.tgz", { "dependencies": { "undici-types": ">=7.24.0 <7.24.7" } }, "sha512-G05zqtJhcDLb8uslf5EjCxXg9G1KQxiV8OS0R26IC//Eoyitzqe8z37I7cqvnZlrlSfgocQRfSn/AHBZJJFyGw=="],
+    "@types/node": ["@types/node@25.9.3", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/@types/node/-/node-25.9.3.tgz", { "dependencies": { "undici-types": ">=7.24.0 <7.24.7" } }, "sha512-603BddQMv3pUcr4U2dhujk83N2tTDVr/34wII2B6bJy6g+8WD6yUb11jszNs0gdi4PesVWl7ABt8nYMVpnLUcg=="],
 
     "bun-types": ["bun-types@1.3.14", "https://maven-vm01.isoad.isogmbh.de:8443/nexus/repository/npm-all/bun-types/-/bun-types-1.3.14.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
