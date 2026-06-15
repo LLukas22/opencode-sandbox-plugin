@@ -7,20 +7,18 @@ config_pkg := join(home, ".config", "opencode", "package.json")
 
 # Build and install plugin locally for testing
 [windows]
-install: build-local
+install: build
     @if (!(Test-Path "{{plugins_dir}}")) { New-Item -ItemType Directory -Path "{{plugins_dir}}" -Force | Out-Null }
-    Copy-Item -Path "dist\local.js" -Destination "{{plugins_dir}}\sandbox-plugin.js" -Force
-    @$pkg = '{{config_pkg}}'; $json = Get-Content $pkg -Raw | ConvertFrom-Json; if (-not $json.dependencies.'@anthropic-ai/sandbox-runtime') { $json.dependencies | Add-Member -NotePropertyName '@anthropic-ai/sandbox-runtime' -NotePropertyValue 'github:LLukas22/sandbox-runtime#elevation' -Force; $json | ConvertTo-Json -Depth 10 | Set-Content $pkg -Encoding UTF8; Write-Host 'Added @anthropic-ai/sandbox-runtime to config package.json' }
+    Copy-Item -Path "dist\index.js" -Destination "{{plugins_dir}}\sandbox-plugin.js" -Force
     @Write-Host "Installed sandbox-plugin.js to {{plugins_dir}}"
 
 [unix]
-install: build-local
+install: build
     mkdir -p "{{plugins_dir}}"
-    cp dist/local.js "{{plugins_dir}}/sandbox-plugin.js"
-    @bun -e "import fs from 'fs';const p='{{config_pkg}}';const j=JSON.parse(fs.readFileSync(p,'utf8'));if(!j.dependencies['@anthropic-ai/sandbox-runtime']){j.dependencies['@anthropic-ai/sandbox-runtime']='github:LLukas22/sandbox-runtime#elevation';fs.writeFileSync(p,JSON.stringify(j,null,2));console.log('Added @anthropic-ai/sandbox-runtime to config package.json')}"
+    cp dist/index.js "{{plugins_dir}}/sandbox-plugin.js"
     @echo "Installed sandbox-plugin.js to {{plugins_dir}}"
 
-# Build for npm (both named + default export)
+# Build (bundles sandbox-runtime inline, only @opencode-ai/plugin is external)
 [windows]
 build:
     bun build ./src/index.ts --outdir dist --target node --format esm --external @opencode-ai/plugin; if ($?) { bun x tsc --emitDeclarationOnly --declaration --outDir dist }
@@ -28,10 +26,6 @@ build:
 [unix]
 build:
     bun build ./src/index.ts --outdir dist --target node --format esm --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly --declaration --outDir dist
-
-# Build for local plugin loading (default export only)
-build-local:
-    bun build ./src/local.ts --outdir dist --target node --format esm --external @opencode-ai/plugin
 
 # Remove the locally installed plugin
 [windows]

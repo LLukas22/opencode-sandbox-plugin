@@ -1,6 +1,6 @@
 {
   "name": "opencode-sandbox-win",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "OpenCode plugin that sandboxes agent commands using @anthropic-ai/sandbox-runtime (seatbelt on macOS, bubblewrap on Linux)",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir dist --target node --format esm --external @anthropic-ai/sandbox-runtime --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build": "bun build ./src/index.ts --outdir dist --target node --format esm --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly --declaration --outDir dist",
     "dev": "bun run --watch src/index.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
@@ -57,10 +57,8 @@
     "provenance": true,
     "registry": "https://registry.npmjs.org/"
   },
-  "dependencies": {
-    "@anthropic-ai/sandbox-runtime": "github:LLukas22/sandbox-runtime#9257fb3801a8dd3318fe1af6b020425b0f24e6ca"
-  },
   "devDependencies": {
+    "@anthropic-ai/sandbox-runtime": "github:LLukas22/sandbox-runtime#9257fb3801a8dd3318fe1af6b020425b0f24e6ca",
     "@biomejs/biome": "^2.0.0",
     "@opencode-ai/plugin": "^1.2.1",
     "@types/bun": "^1.3.9",
