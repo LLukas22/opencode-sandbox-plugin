@@ -30,7 +30,7 @@ mock.module("@anthropic-ai/sandbox-runtime", () => ({
   },
 }))
 
-import SandboxPlugin, { _resetPluginInstance } from "../src/index"
+import { SandboxPlugin, _resetPluginInstance } from "../src/index"
 
 const makeCtx = (dir = "/tmp/project", worktree = "/tmp/project") => ({
   client: {} as any,

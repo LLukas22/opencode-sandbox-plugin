@@ -358,7 +358,10 @@ const SandboxPlugin: Plugin = async ({ directory, worktree }) => {
 }
 
 export { filterExistingPaths, SandboxPlugin }
-export default SandboxPlugin
+export default {
+  id: "opencode-sandbox-win",
+  server: SandboxPlugin,
+}
 
 export function _resetPluginInstance(): void {
   disabled = null
