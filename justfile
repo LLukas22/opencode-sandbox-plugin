@@ -27,6 +27,15 @@ build:
 build:
     bun build ./src/index.ts --outdir dist --target node --format esm --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly --declaration --outDir dist
 
+# Pack as npm tarball and install locally (tests exact published artifact)
+[windows]
+install-pack: build
+    npm pack; if ($?) { $tgz = (Get-ChildItem *.tgz | Sort-Object LastWriteTime -Descending | Select-Object -First 1).Name; if (!(Test-Path "{{plugins_dir}}")) { New-Item -ItemType Directory -Path "{{plugins_dir}}" -Force | Out-Null }; tar -xzf $tgz --strip-components=1 -C "{{plugins_dir}}" package/dist/index.js; Move-Item -Path "{{plugins_dir}}\dist\index.js" -Destination "{{plugins_dir}}\sandbox-plugin.js" -Force; Remove-Item "{{plugins_dir}}\dist" -Force -ErrorAction SilentlyContinue; Remove-Item $tgz -Force; Write-Host "Installed from npm pack to {{plugins_dir}}\sandbox-plugin.js" }
+
+[unix]
+install-pack: build
+    npm pack && tgz=$(ls -t *.tgz | head -1) && mkdir -p "{{plugins_dir}}" && tar -xzf "$tgz" --strip-components=2 -C "{{plugins_dir}}" package/dist/index.js && mv "{{plugins_dir}}/index.js" "{{plugins_dir}}/sandbox-plugin.js" && rm -f "$tgz" && echo "Installed from npm pack to {{plugins_dir}}/sandbox-plugin.js"
+
 # Remove the locally installed plugin
 [windows]
 uninstall:
